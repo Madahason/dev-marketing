@@ -114,6 +114,7 @@ export function Documentary({
               key={`audio_${scene.scene_id}`}
               src={narrationUrl}
               endAt={durationFrames}
+              pauseWhenBuffering
               volume={(frame) => {
                 const fadeStart = Math.max(0, durationFrames - TRANSITION_FRAMES)
                 return frame >= fadeStart

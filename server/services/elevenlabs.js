@@ -149,7 +149,10 @@ async function generateAudio({ text, voiceId, modelId = DEFAULT_MODEL, outputPat
     await generateAndConcatenate({ chunks: textChunks, voiceId, modelId, outputPath, voiceSettings })
   }
 
-  await addSilencePadding(outputPath) // 100ms at start, 600ms at end
+  await addSilencePadding(outputPath, 350, 600) // 350ms onset buffer, 600ms tail
+
+  const finalDuration = await getAudioDuration(outputPath)
+  console.log(`[elevenlabs] audio ready: ${path.basename(outputPath)} — ${finalDuration}s (with silence buffers)`)
 
   return outputPath
 }
