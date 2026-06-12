@@ -28,8 +28,17 @@ export function computeLayout(scenes) {
   return { startFrames, totalFrames: cursor }
 }
 
+const BACKEND_URL = 'http://localhost:3001'
+
+function toAbsoluteUrl(src) {
+  if (!src) return null
+  if (src.startsWith('http')) return src
+  if (src.startsWith('/')) return `${BACKEND_URL}${src}`
+  return src // Windows absolute paths pass through unchanged (CLI rendering)
+}
+
 const isValidUrl = (src) =>
-  !!src && (src.startsWith('/') || src.startsWith('http') || src.match(/^[A-Z]:\\/))
+  !!src && (src.startsWith('http') || src.match(/^[A-Z]:\\/))
 
 // Dispatches each scene to the correct visual component.
 // imagePath: from imagePaths[scene.scene_id] (browser player) OR scene.image_path (render)
@@ -103,7 +112,7 @@ export function Documentary({
   const seriesChildren = uniqueScenes.flatMap((scene, index) => {
     const durationFrames = Math.max(Math.round((scene.duration_seconds || 5) * fps), 30)
     const spec           = audioSpecMap[scene.scene_id]
-    const narrationUrl   = spec?.narration?.url || scene.audio_path || null
+    const narrationUrl   = toAbsoluteUrl(spec?.narration?.url || scene.audio_path || null)
 
     const sequence = (
       <TransitionSeries.Sequence

@@ -105,6 +105,52 @@ async function searchPexels(query, perPage) {
   });
 }
 
+// Wraps CDN video URLs through the local proxy so Remotion can seek them.
+function toProxyUrl(url) {
+  if (!url) return url
+  return `http://localhost:3001/api/stock/proxy?url=${encodeURIComponent(url)}`
+}
+
+// GET /api/stock/proxy?url=<encoded_video_url>
+// Proxies stock video CDN requests, forwarding Range headers so Remotion can seek.
+// Only allows pixabay.com and pexels.com CDN domains.
+router.get('/proxy', (req, res) => {
+  const target = decodeURIComponent(req.query.url || '')
+  if (!target) return res.status(400).send('url required')
+
+  let parsed
+  try { parsed = new URL(target) } catch { return res.status(400).send('invalid url') }
+
+  const ALLOWED = ['cdn.pixabay.com', 'pixabay.com', 'videos.pexels.com', 'player.vimeo.com']
+  if (!ALLOWED.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d))) {
+    return res.status(403).send('domain not allowed')
+  }
+
+  const options = {
+    hostname: parsed.hostname,
+    path:     parsed.pathname + parsed.search,
+    headers:  {
+      'User-Agent': 'Mozilla/5.0',
+      ...(req.headers.range ? { Range: req.headers.range } : {}),
+    },
+  }
+
+  const proxyReq = https.get(options, (proxyRes) => {
+    const fwd = { 'Cache-Control': 'no-store' }
+    if (proxyRes.headers['content-type'])   fwd['Content-Type']   = proxyRes.headers['content-type']
+    if (proxyRes.headers['content-length']) fwd['Content-Length'] = proxyRes.headers['content-length']
+    if (proxyRes.headers['content-range'])  fwd['Content-Range']  = proxyRes.headers['content-range']
+    fwd['Accept-Ranges'] = proxyRes.headers['accept-ranges'] || 'bytes'
+    res.writeHead(proxyRes.statusCode, fwd)
+    proxyRes.pipe(res)
+  })
+
+  proxyReq.on('error', (err) => {
+    console.error('[stock proxy]', err.message)
+    if (!res.headersSent) res.status(500).send('proxy error')
+  })
+})
+
 // POST /api/stock/auto-select
 // Picks the first search result for each unmatched real_footage scene.
 // Tries Pixabay first, falls back to Pexels. Silent per-source failures.
@@ -132,7 +178,7 @@ router.post('/auto-select', async (req, res) => {
       } catch {}
     }
 
-    if (result) selections[scene.scene_id] = result;
+    if (result) selections[scene.scene_id] = { ...result, url: toProxyUrl(result.url) };
   }));
 
   res.json({ selections });

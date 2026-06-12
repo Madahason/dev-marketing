@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { Search, Loader2, X, Film } from 'lucide-react'
 
+const PROXY_BASE = 'http://localhost:3001/api/stock/proxy'
+
+// Wrap CDN video URLs through the local proxy so Remotion can seek them.
+// CDN responses often lack the range-request support Remotion requires.
+function toProxyUrl(url) {
+  if (!url || url.includes('/api/stock/proxy')) return url
+  return `${PROXY_BASE}?url=${encodeURIComponent(url)}`
+}
+
 export function StockFootagePanel({ scene, selectedClip, onSelect, onClose }) {
   const initialQuery = (scene.clip_search_tags || []).join(' ') || scene.script_excerpt?.slice(0, 60) || ''
   const [query,   setQuery]   = useState(initialQuery)
@@ -50,10 +59,10 @@ export function StockFootagePanel({ scene, selectedClip, onSelect, onClose }) {
   }
 
   const handleSelect = (result) => {
-    onSelect(result)                               // updates VideoCreator state immediately
-    setApplied(result.id)                          // shows green flash on the card
+    onSelect({ ...result, url: toProxyUrl(result.url) }) // proxy URL for Remotion seeking
+    setApplied(result.id)                                 // shows green flash on the card
     clearTimeout(closeTimerRef.current)
-    closeTimerRef.current = setTimeout(onClose, 600) // close panel after brief feedback
+    closeTimerRef.current = setTimeout(onClose, 600)      // close panel after brief feedback
   }
 
   const durationLabel = (sec) => {

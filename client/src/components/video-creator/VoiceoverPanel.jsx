@@ -26,7 +26,7 @@ export default function VoiceoverPanel({
   onScenesChange,
 }) {
   const [open,            setOpen]            = useState(false)
-  const [selectedVoiceId, setSelectedVoiceId] = useState(() => localStorage.getItem('vorta_selected_voice') || null)
+  const [selectedVoiceId, setSelectedVoiceId] = useState(() => localStorage.getItem('dm_selected_voice') || null)
   const [voices,          setVoices]          = useState([])
   const [voicesLoading,   setVoicesLoading]   = useState(false)
   const [voiceSearch,     setVoiceSearch]     = useState('')
@@ -84,6 +84,13 @@ export default function VoiceoverPanel({
   // ── Stop audio on unmount ─────────────────────────────────────────────────
   useEffect(() => () => { activeAudioRef.current?.pause() }, [])
 
+  // ── Propagate sceneStatuses to parent outside the render cycle ────────────
+  // Must NOT be called inside a setState updater — that triggers React's
+  // "Cannot update a component while rendering a different component" error.
+  useEffect(() => {
+    if (Object.keys(sceneStatuses).length > 0) onVoiceoverStatusChange?.(sceneStatuses)
+  }, [sceneStatuses]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const realScenes = scenes.filter(s => s.script_excerpt?.trim())
 
   const doneCount = realScenes.filter(s => {
@@ -134,7 +141,7 @@ export default function VoiceoverPanel({
 
   const handleSelectVoice = (voiceId) => {
     setSelectedVoiceId(voiceId)
-    localStorage.setItem('vorta_selected_voice', voiceId)
+    localStorage.setItem('dm_selected_voice', voiceId)
   }
 
   // ── Play scene audio ──────────────────────────────────────────────────────
@@ -176,7 +183,7 @@ export default function VoiceoverPanel({
     const initStatuses = { ...sceneStatuses }
     toGenerate.forEach(s => { initStatuses[s.scene_id] = { status: 'generating', duration: null, error: null } })
     setSceneStatuses(initStatuses)
-    onVoiceoverStatusChange?.(initStatuses)
+    // onVoiceoverStatusChange is handled by the useEffect that watches sceneStatuses
 
     try {
       const response = await fetch(`${SERVER_URL}/api/voiceover/generate`, {
@@ -208,20 +215,12 @@ export default function VoiceoverPanel({
             const event = JSON.parse(line.slice(6))
             if (event.type === 'scene_done') {
               const { scene_id, audio_path, audio_duration, scene_duration } = event
-              setSceneStatuses(prev => {
-                const next = { ...prev, [scene_id]: { status: 'done', duration: audio_duration, error: null } }
-                onVoiceoverStatusChange?.(next)
-                return next
-              })
+              setSceneStatuses(prev => ({ ...prev, [scene_id]: { status: 'done', duration: audio_duration, error: null } }))
               setGenProgress(p => ({ ...p, current: p.current + 1 }))
               onAudioGenerated?.(scene_id, audio_path, audio_duration, scene_duration)
             } else if (event.type === 'scene_error') {
               const { scene_id, error } = event
-              setSceneStatuses(prev => {
-                const next = { ...prev, [scene_id]: { status: 'error', duration: null, error } }
-                onVoiceoverStatusChange?.(next)
-                return next
-              })
+              setSceneStatuses(prev => ({ ...prev, [scene_id]: { status: 'error', duration: null, error } }))
               setGenProgress(p => ({ ...p, current: p.current + 1 }))
             }
           } catch { /* skip malformed */ }
@@ -230,11 +229,7 @@ export default function VoiceoverPanel({
     } catch (err) {
       console.error('[voiceover] generation failed:', err.message)
       toGenerate.forEach(s => {
-        setSceneStatuses(prev => {
-          const next = { ...prev, [s.scene_id]: { status: 'error', duration: null, error: err.message } }
-          onVoiceoverStatusChange?.(next)
-          return next
-        })
+        setSceneStatuses(prev => ({ ...prev, [s.scene_id]: { status: 'error', duration: null, error: err.message } }))
       })
     } finally {
       setGenerating(false)
@@ -249,7 +244,8 @@ export default function VoiceoverPanel({
           })
           const syncData = await syncRes.json()
           if (syncData.updatedScenes) {
-            onScenesChange(() => syncData.updatedScenes)
+            // Defer to avoid triggering a VideoCreator state update during VoiceoverPanel's render
+            setTimeout(() => onScenesChange(() => syncData.updatedScenes), 0)
             const total = syncData.updatedScenes.reduce((s, sc) => s + (sc.duration_seconds || 5), 0)
             console.log('[voiceover] timings synced — total:', total.toFixed(1), 'seconds')
           }
