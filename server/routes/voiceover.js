@@ -170,6 +170,7 @@ router.post('/sync-timings', async (req, res) => {
     if (!duration) return scene
     return {
       ...scene,
+      audio_path:       `/projects/${projectId}/audio/scene_${scene.scene_id}.mp3`,
       audio_duration:   duration,
       duration_seconds: parseFloat((duration + 0.8).toFixed(2)),
     }
