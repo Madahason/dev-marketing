@@ -32,6 +32,7 @@ export function VideoPlayer({
   autoPlay = false,
   loop = false,
   initialFrame,
+  playerRef,
 }) {
   const fps = 30
 
@@ -64,6 +65,7 @@ export function VideoPlayer({
 
   return (
     <Player
+      ref={playerRef || undefined}
       component={Documentary}
       inputProps={inputProps}
       durationInFrames={Math.max(totalFrames, 30)}

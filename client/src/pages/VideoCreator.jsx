@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Trash2, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { VideoPlayer } from '../components/video-creator/VideoPlayer'
+import { PreviewDrawer } from '../components/video-creator/PreviewDrawer'
 import { WizardNav } from '../components/video-creator/WizardNav'
 import { useWizardState } from '../hooks/useWizardState'
 import { ScriptStep }  from './wizard/ScriptStep'
@@ -167,6 +168,9 @@ export default function VideoCreator() {
   const [playerMinimized, setPlayerMinimized] = useState(false)
   const [filmGrain, setFilmGrain]       = useState(true)
   const [previewScene, setPreviewScene] = useState(null)
+  const [previewOpen, setPreviewOpen]   = useState(() => {
+    try { return localStorage.getItem('vorta_preview_open') === 'true' } catch { return false }
+  })
   // Stable array ref — prevents the preview VideoPlayer from re-initialising
   // on every parent render when a scene is previewed.
   const previewScenes = useMemo(() => previewScene ? [previewScene] : [], [previewScene])
@@ -187,6 +191,9 @@ export default function VideoCreator() {
   useEffect(() => { lsWrite(LS.projectId,     projectId)     }, [projectId])
   useEffect(() => { lsWrite(LS.statuses,      sceneStatuses) }, [sceneStatuses])
   useEffect(() => { lsWrite(LS.selectedClips, selectedClips) }, [selectedClips])
+  useEffect(() => {
+    try { localStorage.setItem('vorta_preview_open', String(previewOpen)) } catch { /* quota */ }
+  }, [previewOpen])
 
   // ─── Auto-save snapshot when generation completes (thumbnail available) ──
   useEffect(() => {
@@ -672,13 +679,18 @@ export default function VideoCreator() {
             borderBottom:   '1px solid rgba(255,255,255,0.06)',
             flexShrink:      0,
           }}>
-            <div style={{ width: 320, flexShrink: 0 }}>
+            {/* Clicking the mini player opens the full preview drawer */}
+            <div
+              onClick={() => setPreviewOpen(true)}
+              style={{ width: 320, flexShrink: 0, cursor: 'pointer', position: 'relative' }}
+              title="Click to open full preview"
+            >
               <VideoPlayer
                 scenes={scenes}
                 imagePaths={imagePaths}
                 selectedClips={selectedClips}
                 globalSettings={globalSettings}
-                style={{ width: '100%', aspectRatio: '16/9', borderRadius: 6, overflow: 'hidden' }}
+                style={{ width: '100%', aspectRatio: '16/9', borderRadius: 6, overflow: 'hidden', pointerEvents: 'none' }}
               />
             </div>
             <div>
@@ -691,6 +703,18 @@ export default function VideoCreator() {
                   ✓ {Object.values(sceneStatuses).filter(s => s.status === 'done').length} visuals ready
                 </div>
               )}
+              <button
+                onClick={() => setPreviewOpen(p => !p)}
+                style={{
+                  marginTop: 6, display: 'flex', alignItems: 'center', gap: 5,
+                  fontSize: 10, color: 'rgba(255,255,255,0.28)',
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.55)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.28)'}
+              >
+                {previewOpen ? '← Close preview' : '▶ Open preview'}
+              </button>
             </div>
           </div>
         )}
@@ -740,6 +764,45 @@ export default function VideoCreator() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* ── Preview drawer — slide-in from right ── */}
+      {wizard.currentStep !== 'script' && scenes.length > 0 && (
+        <PreviewDrawer
+          isOpen={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          scenes={scenes}
+          imagePaths={imagePaths}
+          selectedClips={selectedClips}
+          globalSettings={globalSettings}
+          sceneStatuses={sceneStatuses}
+          currentStep={wizard.currentStep}
+        />
+      )}
+
+      {/* ── Floating preview toggle button ── */}
+      {wizard.currentStep !== 'script' && scenes.length > 0 && (
+        <button
+          onClick={() => setPreviewOpen(p => !p)}
+          style={{
+            position:       'fixed', bottom: 24, right: 24, zIndex: 40,
+            display:        'flex', alignItems: 'center', gap: 6,
+            padding:        '8px 16px',
+            background:     'rgba(15,15,15,0.92)',
+            backdropFilter: 'blur(8px)',
+            border:         '1px solid rgba(255,255,255,0.11)',
+            borderRadius:    8,
+            color:          previewOpen ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.65)',
+            fontSize:        13, cursor: 'pointer',
+            boxShadow:      '0 4px 20px rgba(0,0,0,0.45)',
+            transition:     'background 0.15s, color 0.15s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(30,30,30,0.96)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(15,15,15,0.92)'}
+          title={previewOpen ? 'Close preview' : 'Open preview'}
+        >
+          {previewOpen ? '× Preview' : '▶ Preview'}
+        </button>
       )}
 
       {/* Compact sticky player — triggered when scrolled past inline player */}
