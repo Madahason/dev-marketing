@@ -1,31 +1,24 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Trash2, Library, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { Trash2, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { VideoPlayer } from '../components/video-creator/VideoPlayer'
-import ClipLibrary from '../components/video-creator/ClipLibrary'
-import OverlayStudio from '../components/video-creator/OverlayStudio'
-import { OverlayReviewModal } from '../components/video-creator/OverlayReviewModal'
 import { WizardNav } from '../components/video-creator/WizardNav'
-import { DEFAULT_BRAND } from '../config/overlayTemplates'
 import { useWizardState } from '../hooks/useWizardState'
 import { ScriptStep }  from './wizard/ScriptStep'
 import { ScenesStep }  from './wizard/ScenesStep'
 import { VisualsStep } from './wizard/VisualsStep'
 import { VoiceStep }   from './wizard/VoiceStep'
-import { AudioStep }   from './wizard/AudioStep'
 import { ExportStep }  from './wizard/ExportStep'
 
 const SERVER_URL = 'http://localhost:3001'
 
 const LS = {
-  scenes:        'vorta_scenes',
-  projectId:     'vorta_project_id',
-  statuses:      'vorta_scene_statuses',
-  metadata:      'vorta_script_metadata',
-  motionComps:   'vorta_motion_components',
-  clipMatches:   'vorta_clip_matches',
-  selectedClips: 'vorta_selected_clips',
-  sessionKey:    'vorta_session_key',
-  audioSpecs:    'vorta_audio_specs',
+  scenes:        'dm_scenes',
+  projectId:     'dm_project_id',
+  statuses:      'dm_scene_statuses',
+  metadata:      'dm_script_metadata',
+  motionComps:   'dm_motion_components',
+  selectedClips: 'dm_selected_clips',
+  sessionKey:    'dm_session_key',
 }
 
 function lsRead(key) {
@@ -40,7 +33,6 @@ function lsClearAll() {
 
 // Strip import lines and convert `export default` → `return` so code is
 // compatible with the Function constructor evaluator in MotionGraphicScene.jsx.
-// Old JSX components will still fail at eval (expected) — rebuild resolves it.
 function cleanMotionComponent(code) {
   if (!code) return null
   return code
@@ -69,7 +61,7 @@ function formatError(msg) {
   return msg
 }
 
-function saveProjectToList(key, title, scenes, sceneStatuses, selectedClips, clipMatches, projectId) {
+function saveProjectToList(key, title, scenes, sceneStatuses, selectedClips, projectId) {
   const thumbnail = Object.values(sceneStatuses || {}).find(s => s.status === 'done')?.image_path || null
   const entry = {
     key,
@@ -78,14 +70,13 @@ function saveProjectToList(key, title, scenes, sceneStatuses, selectedClips, cli
     thumbnail,
     lastUpdated: Date.now(),
   }
-  const existing = JSON.parse(localStorage.getItem('vorta_projects') || '[]')
+  const existing = JSON.parse(localStorage.getItem('dm_projects') || '[]')
   const updated  = [entry, ...existing.filter(p => p.key !== key)].slice(0, 20)
-  localStorage.setItem('vorta_projects', JSON.stringify(updated))
-  localStorage.setItem(`vorta_project_data_${key}`, JSON.stringify({
+  localStorage.setItem('dm_projects', JSON.stringify(updated))
+  localStorage.setItem(`dm_project_data_${key}`, JSON.stringify({
     scenes,
     sceneStatuses: sceneStatuses || {},
     selectedClips: selectedClips || {},
-    clipMatches:   clipMatches   || {},
     projectId,
     metadata: lsRead(LS.metadata) || {},
   }))
@@ -141,36 +132,15 @@ export default function VideoCreator() {
   const [motionStatuses, setMotionStatuses]   = useState({})
   const [isRebuildingAll, setIsRebuildingAll] = useState(false)
 
-  // Clip matches — { [scene_id]: { matches: [], loading: bool } }
-  const [clipMatches, setClipMatches] = useState(() => {
-    const saved = lsRead(LS.clipMatches) || {}
-    const clean = {}
-    Object.entries(saved).forEach(([sid, v]) => {
-      clean[sid] = { matches: v.matches || [], loading: false }
-    })
-    return clean
-  })
-
   // Voiceover
   const [voiceoverStatuses,   setVoiceoverStatuses]   = useState({})
   const [voiceoverPanelOpen,  setVoiceoverPanelOpen]  = useState(false)
   const [voiceoverFocusScene, setVoiceoverFocusScene] = useState(null)
 
-  // Audio specs (music + ambient + stings per scene)
-  const [audioSpecs,   setAudioSpecs]   = useState(() => lsRead(LS.audioSpecs) || [])
-  const [audioVolumes, setAudioVolumes] = useState({ music: 0.12, ambient: 0.06, sting: 0.45 })
-
-  // Overlay Studio + review modal
-  const [overlayStudioScene, setOverlayStudioScene] = useState(null)
-  const [overlayReviewOpen, setOverlayReviewOpen] = useState(false)
-  const [brand, setBrand] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('vorta_brand')) || DEFAULT_BRAND } catch { return DEFAULT_BRAND }
-  })
-
   // Generate progress — { done, total }
   const [generateProgress, setGenerateProgress] = useState({ done: 0, total: 0 })
 
-  // Selected clips — { [scene_id]: clip_object }
+  // Selected clips — { [scene_id]: clip_object } — kept for render props
   const [selectedClips, setSelectedClips] = useState(() => {
     const saved = lsRead(LS.selectedClips)
     if (saved) return saved
@@ -179,8 +149,6 @@ export default function VideoCreator() {
     savedScenes.forEach(s => { if (s.selected_clip) migrated[s.scene_id] = s.selected_clip })
     return migrated
   })
-
-  const [showClipLibrary, setShowClipLibrary] = useState(false)
 
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState(null)
@@ -219,37 +187,12 @@ export default function VideoCreator() {
   useEffect(() => { lsWrite(LS.projectId,     projectId)     }, [projectId])
   useEffect(() => { lsWrite(LS.statuses,      sceneStatuses) }, [sceneStatuses])
   useEffect(() => { lsWrite(LS.selectedClips, selectedClips) }, [selectedClips])
-  useEffect(() => {
-    if (audioSpecs.length > 0) {
-      try { localStorage.setItem(LS.audioSpecs, JSON.stringify(audioSpecs)) } catch { /* quota */ }
-    }
-  }, [audioSpecs])
-  useEffect(() => {
-    const toSave = {}
-    Object.entries(clipMatches).forEach(([sid, v]) => {
-      if (!v.loading) toSave[sid] = v
-    })
-    lsWrite(LS.clipMatches, toSave)
-  }, [clipMatches])
-
-  // ─── One-time migration: clear audioSpecs if they don't match current scenes ─
-  useEffect(() => {
-    const savedSpecs  = lsRead(LS.audioSpecs)  || []
-    const savedScenes = lsRead(LS.scenes)       || []
-    if (savedSpecs.length > 0 && savedScenes.length > 0 &&
-        savedSpecs.length !== savedScenes.length) {
-      console.warn('[init] audioSpecs count mismatch — clearing stale specs',
-        savedSpecs.length, '!=', savedScenes.length)
-      localStorage.removeItem('vorta_audio_specs')
-      setAudioSpecs([])
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Auto-save snapshot when generation completes (thumbnail available) ──
   useEffect(() => {
     if (!generateDone || !sessionKey || !scenes.length) return
     const title = lsRead(LS.metadata)?.title || 'Untitled'
-    saveProjectToList(sessionKey, title, scenes, sceneStatuses, selectedClips, clipMatches, projectId)
+    saveProjectToList(sessionKey, title, scenes, sceneStatuses, selectedClips, projectId)
   }, [generateDone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Keyboard shortcuts ───────────────────────────────────────────────────
@@ -257,18 +200,17 @@ export default function VideoCreator() {
     const handler = (e) => {
       if (e.key === 'Escape') {
         if (previewScene) { setPreviewScene(null); return }
-        if (showClipLibrary) { setShowClipLibrary(false); return }
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
         if (hasAnalyzed && scenes.length > 0) {
           e.preventDefault()
-          document.getElementById('vorta-export-panel')?.scrollIntoView({ behavior: 'smooth' })
+          document.getElementById('dm-export-panel')?.scrollIntoView({ behavior: 'smooth' })
         }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [previewScene, showClipLibrary, hasAnalyzed, scenes.length])
+  }, [previewScene, hasAnalyzed, scenes.length])
 
   // ─── Derive imagePaths from sceneStatuses for the Remotion player ────────
   const imagePaths = useMemo(() => {
@@ -283,69 +225,6 @@ export default function VideoCreator() {
     grainIntensity: filmGrain ? undefined : 0,
   }), [filmGrain])
 
-  // ─── Overlay suggestion stats ─────────────────────────────────────────────
-  const overlayStats = useMemo(() => {
-    const suggested = scenes.flatMap(s => (s.overlays || []).filter(o => o.status === 'suggested'))
-    const accepted  = scenes.flatMap(s => (s.overlays || []).filter(o => o.status === 'accepted'))
-    const rejected  = scenes.flatMap(s => (s.overlays || []).filter(o => o.status === 'rejected'))
-    return {
-      total:     suggested.length + accepted.length,
-      suggested: suggested.length,
-      accepted:  accepted.length,
-      rejected:  rejected.length,
-      scenesWithSuggestions: scenes.filter(s => s.overlays?.some(o => o.status === 'suggested')).length,
-    }
-  }, [scenes])
-
-  // ─── Overlay accept/reject handlers ──────────────────────────────────────
-  const handleAcceptAllOverlays = () => {
-    setScenes(prev => prev.map(s => ({
-      ...s,
-      overlays: (s.overlays || []).map(o =>
-        o.status === 'suggested' ? { ...o, status: 'accepted' } : o
-      ),
-    })))
-  }
-
-  const handleRejectAllOverlays = () => {
-    setScenes(prev => prev.map(s => ({
-      ...s,
-      overlays: (s.overlays || []).filter(o => o.status !== 'suggested'),
-    })))
-  }
-
-  const handleAcceptSceneOverlays = (sceneId) => {
-    setScenes(prev => prev.map(s =>
-      s.scene_id === sceneId
-        ? { ...s, overlays: (s.overlays || []).map(o => ({ ...o, status: 'accepted' })) }
-        : s
-    ))
-  }
-
-  const handleRejectSceneOverlays = (sceneId) => {
-    setScenes(prev => prev.map(s =>
-      s.scene_id === sceneId
-        ? { ...s, overlays: (s.overlays || []).filter(o => o.status !== 'suggested') }
-        : s
-    ))
-  }
-
-  const handleAcceptOverlay = (sceneId, overlayId) => {
-    setScenes(prev => prev.map(s =>
-      s.scene_id === sceneId
-        ? { ...s, overlays: (s.overlays || []).map(o => o.id === overlayId ? { ...o, status: 'accepted' } : o) }
-        : s
-    ))
-  }
-
-  const handleRejectOverlay = (sceneId, overlayId) => {
-    setScenes(prev => prev.map(s =>
-      s.scene_id === sceneId
-        ? { ...s, overlays: (s.overlays || []).filter(o => o.id !== overlayId) }
-        : s
-    ))
-  }
-
   // ─── Sticky player — IntersectionObserver on sentinel div ─────────────────
   useEffect(() => {
     if (!sentinelRef.current || !showPlayer) {
@@ -359,13 +238,6 @@ export default function VideoCreator() {
     observer.observe(sentinelRef.current)
     return () => observer.disconnect()
   }, [showPlayer])
-
-  // ─── Re-run clip matching on load if scenes restored but matches missing ──
-  useEffect(() => {
-    const realScenes = scenes.filter(s => s.shot_type === 'real_footage')
-    const unmatched  = realScenes.filter(s => !clipMatches[s.scene_id])
-    if (unmatched.length > 0) matchClipsForScenes(unmatched)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── SSE cleanup on unmount ───────────────────────────────────────────────
   useEffect(() => { return () => eventSourceRef.current?.close() }, [])
@@ -384,10 +256,7 @@ export default function VideoCreator() {
     setAnalyzeError(null)
     setIsGenerating(false)
     setMotionStatuses({})
-    setClipMatches({})
     setSelectedClips({})
-    setAudioSpecs([])
-    setShowClipLibrary(false)
     setShowPlayer(false)
     setPlayerStuck(false)
     setPlayerMinimized(false)
@@ -396,52 +265,6 @@ export default function VideoCreator() {
     setBadgeFading(false)
     setResetKey(k => k + 1)
     wizard.resetWizard()
-  }
-
-  // ─── Apply audio specs — single source of truth for persisting specs ──────
-  const handleApplyAudioSpecs = (specs) => {
-    if (!specs?.length) return
-    const withNarration = specs.filter(s => s.narration?.url).length
-    console.log('[audio] applying specs:', specs.length, 'total, narration:', withNarration)
-    setAudioSpecs(specs)
-    try {
-      const json = JSON.stringify(specs)
-      localStorage.setItem(LS.audioSpecs, json)
-      const verify = JSON.parse(localStorage.getItem(LS.audioSpecs) || '[]')
-      console.log('[VideoCreator] audioSpecs saved to localStorage — count:', verify.length,
-        'first scene_id:', verify[0]?.scene_id)
-    } catch (err) {
-      console.error('[VideoCreator] localStorage save FAILED:', err)
-    }
-  }
-
-  // ─── Build audio specs (music + ambient + stings per scene) ──────────────
-  const handleBuildAudioSpecs = async () => {
-    if (!scenes.length) return
-
-    console.log('[VideoCreator] build-specs request — scenes:', scenes.length, 'projectId:', projectId)
-    const res = await fetch('/api/audio/build-specs', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ scenes, projectId }),
-    })
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text || `Build-specs failed (${res.status})`)
-    }
-    const data = await res.json()
-    console.log('[VideoCreator] build-specs response — success:', data.success, 'specs:', data.specs?.length)
-    if (data.success && data.specs?.length) {
-      handleApplyAudioSpecs(data.specs)
-      console.log('[audio] specs ready:', {
-        total:         data.specs.length,
-        withMusic:     data.specs.filter(s => s.music).length,
-        withAmbient:   data.specs.filter(s => s.ambient).length,
-        withNarration: data.specs.filter(s => s.narration).length,
-      })
-    } else {
-      console.warn('[VideoCreator] build-specs returned no specs — data:', JSON.stringify(data).slice(0, 200))
-    }
   }
 
   // ─── SSE subscription ─────────────────────────────────────────────────────
@@ -494,22 +317,15 @@ export default function VideoCreator() {
       if (!res.ok) throw new Error(data.error || 'Analysis failed')
       setScenes(data.scenes)
       setHasAnalyzed(true)
-      // Clear audioSpecs — they belong to the previous scene set and would mismatch
-      setAudioSpecs([])
-      localStorage.removeItem('vorta_audio_specs')
-      console.log('[analyze] cleared stale audioSpecs — new scene count:', data.scenes.length)
-      matchClipsForScenes(data.scenes)
-      // Advance wizard to Scenes step
       wizard.markComplete('script')
       wizard.goNext()
 
-      // Register in project list for project management
       const key = sessionKey || `proj_${Date.now()}`
       if (!sessionKey) {
         setSessionKey(key)
         lsWrite(LS.sessionKey, key)
       }
-      saveProjectToList(key, metadata.title, data.scenes, {}, {}, {}, null)
+      saveProjectToList(key, metadata.title, data.scenes, {}, {}, null)
     } catch (err) {
       setAnalyzeError(err.message)
     } finally {
@@ -517,7 +333,7 @@ export default function VideoCreator() {
     }
   }
 
-  // ─── Generate — image scenes (promise-based for parallel coordination) ───
+  // ─── Generate — image scenes ──────────────────────────────────────────────
   const generateImageScenes = async (imageScenes, tick) => {
     if (!imageScenes.length) return
 
@@ -578,19 +394,11 @@ export default function VideoCreator() {
     }
   }
 
-  // ─── Generate — real footage clip matching ────────────────────────────────
-  const generateRealFootageMatches = async (realScenes, tick) => {
-    if (!realScenes.length) return
-    await matchClipsForScenes(realScenes)
-    realScenes.forEach(() => tick())
-  }
-
   // ─── Unified Generate Assets ──────────────────────────────────────────────
   const handleGenerateAll = async () => {
-    const imageScenes   = scenes.filter(s => s.shot_type === 'image')
-    const motionScenes  = scenes.filter(s => s.shot_type === 'motion_graphic' && !s.motion_component)
-    const realScenes    = scenes.filter(s => s.shot_type === 'real_footage'   && !clipMatches[s.scene_id]?.matches?.length)
-    const total = imageScenes.length + motionScenes.length + realScenes.length
+    const imageScenes  = scenes.filter(s => s.shot_type === 'image')
+    const motionScenes = scenes.filter(s => s.shot_type === 'motion_graphic' && !s.motion_component)
+    const total = imageScenes.length + motionScenes.length
 
     setIsGenerating(true)
     setGenerateError(null)
@@ -602,7 +410,6 @@ export default function VideoCreator() {
     await Promise.allSettled([
       generateImageScenes(imageScenes, tick),
       generateMotionGraphicsScenes(motionScenes, tick),
-      generateRealFootageMatches(realScenes, tick),
     ])
 
     setIsGenerating(false)
@@ -648,7 +455,6 @@ export default function VideoCreator() {
     if (!motionScenes.length) return
 
     setIsRebuildingAll(true)
-    // Clear all stored components so the player shows "building…" placeholders
     setScenes(prev => prev.map(s =>
       s.shot_type === 'motion_graphic' ? { ...s, motion_component: null } : s
     ))
@@ -658,52 +464,6 @@ export default function VideoCreator() {
     }
 
     setIsRebuildingAll(false)
-  }
-
-  // ─── Clip matching ────────────────────────────────────────────────────────
-  const matchClipsForScenes = async (allScenes) => {
-    const realScenes = allScenes.filter(s => s.shot_type === 'real_footage')
-    console.log('[MATCH DEBUG 1] auto-match triggered, scenes:', allScenes.length)
-    console.log('[MATCH DEBUG 2] real_footage scenes:', realScenes.map(s => s.scene_id), 'tags sample:', realScenes[0]?.clip_search_tags)
-    console.log('[CLIP DEBUG 1] matchClipsForScenes called, real scenes:', realScenes.length, 'tags sample:', realScenes[0]?.clip_search_tags)
-    if (!realScenes.length) return
-
-    setClipMatches(prev => {
-      const next = { ...prev }
-      realScenes.forEach(s => { next[s.scene_id] = { matches: [], loading: true } })
-      return next
-    })
-
-    try {
-      const res  = await fetch('/api/library/match-all', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ scenes: realScenes }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Match failed')
-
-      console.log('[MATCH DEBUG 3] match results from API:', data.results)
-      console.log('[MATCH DEBUG 4] match counts:', Object.entries(data.results).map(([sid, m]) => `${sid}:${m.length}`))
-      console.log('[CLIP DEBUG 2] match-all API response:', JSON.stringify(data.results).slice(0, 300))
-
-      setClipMatches(prev => {
-        const next = { ...prev }
-        Object.entries(data.results).forEach(([sid, matches]) => {
-          next[sid] = { matches, loading: false }
-        })
-        return next
-      })
-
-      console.log('[CLIP DEBUG 3] clipMatches updated for', Object.keys(data.results).length, 'scenes, first result:', JSON.stringify(Object.entries(data.results).slice(0, 1)))
-    } catch (err) {
-      console.log('[CLIP DEBUG 2] match-all FAILED:', err?.message)
-      setClipMatches(prev => {
-        const next = { ...prev }
-        realScenes.forEach(s => { next[s.scene_id] = { matches: [], loading: false } })
-        return next
-      })
-    }
   }
 
   // ─── Retry ────────────────────────────────────────────────────────────────
@@ -744,7 +504,6 @@ export default function VideoCreator() {
     setScenes(prev => prev.map(s =>
       s.scene_id === scene_id ? { ...s, shot_type: 'image', real_footage_flag: false } : s
     ))
-    setClipMatches(prev => { const n = { ...prev }; delete n[scene_id]; return n })
     setSelectedClips(prev => { const n = { ...prev }; delete n[scene_id]; return n })
   }
 
@@ -754,21 +513,8 @@ export default function VideoCreator() {
     setVoiceoverFocusScene(scene.scene_id)
   }
 
-  // ─── Overlay Studio ───────────────────────────────────────────────────────
-  const handleOpenOverlayStudio = (scene) => setOverlayStudioScene(scene)
-
-  // Combined save + close: spread overlays into a new array so useMemo in VideoPlayer
-  // always sees a changed reference and the Remotion Player re-renders the composition.
-  const handleOverlaySave = (sceneId, newOverlays) => {
-    setScenes(prev => prev.map(s =>
-      s.scene_id === sceneId ? { ...s, overlays: [...newOverlays] } : s
-    ))
-    setOverlayStudioScene(null)
-  }
-
   // ─── Voiceover — called by VoiceoverPanel on scene_done SSE event ────────
   const handleAudioGenerated = (sceneId, audioPath, audioDuration, sceneDuration) => {
-    console.log('[voiceover] updating scene', sceneId, 'audio_path:', audioPath)
     setScenes(prev => {
       const updated = prev.map(s => {
         if (s.scene_id !== sceneId) return s
@@ -780,31 +526,9 @@ export default function VideoCreator() {
         }
         return base
       })
-      // Persist immediately so audio_path survives a page refresh before autosave fires
       try { localStorage.setItem(LS.scenes, JSON.stringify(updated)) } catch { /* quota */ }
       return updated
     })
-  }
-
-  // ─── Manual match for a single scene ─────────────────────────────────────
-  const handleManualMatch = async (scene) => {
-    setClipMatches(prev => ({ ...prev, [scene.scene_id]: { matches: [], loading: true } }))
-    try {
-      const res  = await fetch('/api/library/match', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          tags:     scene.clip_search_tags || [],
-          scene_id: scene.scene_id,
-          mood:     scene.mood,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setClipMatches(prev => ({ ...prev, [scene.scene_id]: { matches: data.matches || [], loading: false } }))
-    } catch {
-      setClipMatches(prev => ({ ...prev, [scene.scene_id]: { matches: [], loading: false } }))
-    }
   }
 
   const imageSceneCount   = scenes.filter(s => s.shot_type === 'image').length
@@ -840,22 +564,12 @@ export default function VideoCreator() {
             onRetry={handleRetry}
             motionStatuses={motionStatuses}
             onBuildComponent={handleBuildComponent}
-            clipMatches={clipMatches}
             selectedClips={selectedClips}
             onSelectClip={handleSelectClip}
             onConvertToImage={handleConvertToImage}
-            onManualMatch={handleManualMatch}
-            onOpenLibrary={() => setShowClipLibrary(true)}
             onPreviewScene={setPreviewScene}
             voiceoverStatuses={voiceoverStatuses}
             onOpenVoiceover={handleOpenVoiceover}
-            onOpenOverlayStudio={handleOpenOverlayStudio}
-            onAcceptSceneOverlays={handleAcceptSceneOverlays}
-            onRejectSceneOverlays={handleRejectSceneOverlays}
-            overlayStats={overlayStats}
-            onAcceptAllOverlays={handleAcceptAllOverlays}
-            onRejectAllOverlays={handleRejectAllOverlays}
-            onOpenReviewModal={() => setOverlayReviewOpen(true)}
             wizard={wizard}
           />
         )
@@ -872,18 +586,12 @@ export default function VideoCreator() {
             onRetry={handleRetry}
             motionStatuses={motionStatuses}
             onBuildComponent={handleBuildComponent}
-            clipMatches={clipMatches}
             selectedClips={selectedClips}
             onSelectClip={handleSelectClip}
             onConvertToImage={handleConvertToImage}
-            onManualMatch={handleManualMatch}
-            onOpenLibrary={() => setShowClipLibrary(true)}
             onPreviewScene={setPreviewScene}
             voiceoverStatuses={voiceoverStatuses}
             onOpenVoiceover={handleOpenVoiceover}
-            onOpenOverlayStudio={handleOpenOverlayStudio}
-            onAcceptSceneOverlays={handleAcceptSceneOverlays}
-            onRejectSceneOverlays={handleRejectSceneOverlays}
             projectId={projectId}
             wizard={wizard}
           />
@@ -900,19 +608,6 @@ export default function VideoCreator() {
             wizard={wizard}
           />
         )
-      case 'audio':
-        return (
-          <AudioStep
-            scenes={scenes}
-            projectId={projectId}
-            audioSpecs={audioSpecs}
-            onBuildSpecs={handleBuildAudioSpecs}
-            onApplySpecs={handleApplyAudioSpecs}
-            audioVolumes={audioVolumes}
-            onVolumesChange={setAudioVolumes}
-            wizard={wizard}
-          />
-        )
       case 'export':
         return (
           <ExportStep
@@ -922,7 +617,6 @@ export default function VideoCreator() {
             imagePaths={imagePaths}
             globalSettings={globalSettings}
             voiceoverStatuses={voiceoverStatuses}
-            audioSpecs={audioSpecs}
             projectId={projectId}
             wizard={wizard}
           />
@@ -954,16 +648,6 @@ export default function VideoCreator() {
                 Session restored
               </span>
             )}
-            {hasAnalyzed && (
-              <button
-                onClick={() => setShowClipLibrary(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)', background: 'none', border: 'none', cursor: 'pointer' }}
-                onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.6)'}
-                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
-              >
-                <Library size={11} /> Clip Library
-              </button>
-            )}
             <button
               onClick={handleClearSession}
               style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'rgba(255,255,255,0.25)', background: 'none', border: 'none', cursor: 'pointer' }}
@@ -994,7 +678,6 @@ export default function VideoCreator() {
                 imagePaths={imagePaths}
                 selectedClips={selectedClips}
                 globalSettings={globalSettings}
-                audioSpecs={audioSpecs}
                 style={{ width: '100%', aspectRatio: '16/9', borderRadius: 6, overflow: 'hidden' }}
               />
             </div>
@@ -1018,7 +701,7 @@ export default function VideoCreator() {
         </div>
       </div>
 
-      {/* ── Global modals (persist across all steps) ── */}
+      {/* ── Global modals ── */}
 
       {/* Single-scene preview modal */}
       {previewScene && (
@@ -1059,7 +742,7 @@ export default function VideoCreator() {
         </div>
       )}
 
-      {/* Compact sticky player — legacy, triggered when scrolled past inline player */}
+      {/* Compact sticky player — triggered when scrolled past inline player */}
       {showPlayer && playerStuck && (
         <div style={{
           position: 'fixed', top: 16, right: 24, zIndex: 60, width: 320,
@@ -1090,39 +773,10 @@ export default function VideoCreator() {
               imagePaths={imagePaths}
               selectedClips={selectedClips}
               globalSettings={globalSettings}
-              audioSpecs={audioSpecs}
               style={{ width: '100%', aspectRatio: '16 / 9', display: 'block' }}
             />
           )}
         </div>
-      )}
-
-      {showClipLibrary && (
-        <ClipLibrary onClose={() => setShowClipLibrary(false)} projectId={projectId} />
-      )}
-
-      {overlayStudioScene && (
-        <OverlayStudio
-          scene={overlayStudioScene}
-          imagePaths={imagePaths}
-          selectedClips={selectedClips}
-          globalSettings={globalSettings}
-          brand={brand}
-          onClose={() => setOverlayStudioScene(null)}
-          onSave={handleOverlaySave}
-        />
-      )}
-
-      {overlayReviewOpen && (
-        <OverlayReviewModal
-          scenes={scenes}
-          onAcceptOverlay={handleAcceptOverlay}
-          onRejectOverlay={handleRejectOverlay}
-          onAcceptScene={handleAcceptSceneOverlays}
-          onRejectScene={handleRejectSceneOverlays}
-          onAcceptAll={handleAcceptAllOverlays}
-          onClose={() => setOverlayReviewOpen(false)}
-        />
       )}
     </>
   )
