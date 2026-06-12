@@ -115,6 +115,7 @@ router.post('/generate', async (req, res) => {
         const sceneDuration = audioDuration
           ? parseFloat((audioDuration + 0.8).toFixed(2))
           : (scene.duration_seconds || 5)
+        console.log(`[voiceover] scene ${scene.scene_id}: audio=${audioDuration?.toFixed(2)}s, scene=${sceneDuration.toFixed(2)}s`)
         const audio_path = `/projects/${projectId}/audio/scene_${scene.scene_id}.mp3`
 
         results.push({ scene_id: scene.scene_id, audio_path, audio_duration: audioDuration, scene_duration: sceneDuration, status: 'done' })
@@ -168,11 +169,13 @@ router.post('/sync-timings', async (req, res) => {
     if (!fs.existsSync(audioPath)) return scene
     const duration = await getAudioDuration(audioPath)
     if (!duration) return scene
+    const sceneDuration = parseFloat((duration + 0.8).toFixed(2))
+    console.log(`[voiceover] sync: scene ${scene.scene_id}: audio=${duration.toFixed(2)}s, scene=${sceneDuration.toFixed(2)}s`)
     return {
       ...scene,
       audio_path:       `/projects/${projectId}/audio/scene_${scene.scene_id}.mp3`,
       audio_duration:   duration,
-      duration_seconds: parseFloat((duration + 0.8).toFixed(2)),
+      duration_seconds: sceneDuration,
     }
   }))
 
