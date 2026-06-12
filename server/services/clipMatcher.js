@@ -4,6 +4,7 @@ const clipStore = require('./clipStore')
 const LICENSE_BONUS = {
   public_domain:    0.3,
   creative_commons: 0.3,
+  royalty_free:     0.3,
   fair_use:         0.1,
   unknown:          0,
 }

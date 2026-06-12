@@ -7,6 +7,8 @@ const SERVER_URL = 'http://localhost:3001'
 
 const TABS = [
   { id: 'library',     label: 'My Library' },
+  { id: 'pixabay',     label: 'Pixabay' },
+  { id: 'pexels',      label: 'Pexels' },
   { id: 'youtube_cc',  label: 'YouTube CC' },
   { id: 'fair_use',    label: 'Fair Use' },
   { id: 'archive',     label: 'Archive' },
@@ -62,6 +64,13 @@ function LicenseBadge({ license }) {
     return (
       <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(34,197,94,0.10)', color: 'rgba(74,222,128,0.80)', border: '1px solid rgba(34,197,94,0.20)' }}>
         {license === 'public_domain' ? 'PD' : 'CC'}
+      </span>
+    )
+  }
+  if (license === 'royalty_free') {
+    return (
+      <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(99,102,241,0.10)', color: 'rgba(165,180,252,0.80)', border: '1px solid rgba(99,102,241,0.22)' }}>
+        RF
       </span>
     )
   }
@@ -180,7 +189,7 @@ export default function ClipLibrary({ onClose, projectId }) {
 
   const handleSeed = async () => {
     const meta = (() => {
-      try { return JSON.parse(localStorage.getItem('vorta_script_metadata') || '{}') } catch { return {} }
+      try { return JSON.parse(localStorage.getItem('dm_script_metadata') || '{}') } catch { return {} }
     })()
     setSeeding(true)
     setSeedEvents([])
@@ -335,6 +344,8 @@ export default function ClipLibrary({ onClose, projectId }) {
             </div>
           )}
           {tab === 'library'     && <LibraryTab clips={clips} allClips={allClips} categories={categories} loading={loading} error={libError} query={query} setQuery={setQuery} catFilter={catFilter} setCatFilter={setCatFilter} showAddForm={showAddForm} setShowAddForm={setShowAddForm} deleting={deleting} onDelete={handleDelete} onRefresh={fetchLibrary} onRefreshGaps={fetchGaps} onPreview={setPreviewClip} onClipUploaded={handleClipUploaded} />}
+          {tab === 'pixabay'     && <StockTab source="pixabay" label="Pixabay" projectId={projectId} onDownloaded={() => { fetchLibrary(); fetchGaps(); fetchStatus() }} />}
+          {tab === 'pexels'      && <StockTab source="pexels"  label="Pexels"  projectId={projectId} onDownloaded={() => { fetchLibrary(); fetchGaps(); fetchStatus() }} />}
           {tab === 'youtube_cc'  && <SourceTab source="youtube-cc"       label="YouTube CC"       hasSegment={true}  warningText={null} projectId={projectId} onDownloaded={() => { fetchLibrary(); fetchGaps(); fetchStatus() }} />}
           {tab === 'fair_use'    && <SourceTab source="youtube-fair-use" label="YouTube Fair Use"  hasSegment={true}  warningText="Copyrighted content — confirm documentary/commentary purpose before distributing." projectId={projectId} onDownloaded={() => { fetchLibrary(); fetchGaps(); fetchStatus() }} />}
           {tab === 'archive'     && <SourceTab source="archive"          label="Internet Archive"  hasSegment={false} warningText={null} projectId={projectId} onDownloaded={() => { fetchLibrary(); fetchGaps(); fetchStatus() }} />}
@@ -1024,6 +1035,265 @@ function SearchResult({ result, source, hasSegment, projectId, isExpanded, onTog
 
       {done && (
         <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(34,197,94,0.10)', background: 'rgba(34,197,94,0.04)', fontSize: 12, color: 'rgba(74,222,128,0.70)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CheckCircle size={12} /> Added to library
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── StockTab ─────────────────────────────────────────────────────────────────
+
+function StockTab({ source, label, projectId, onDownloaded }) {
+  const [query,    setQuery]    = useState('')
+  const [results,  setResults]  = useState([])
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(null)
+  const [apiError, setApiError] = useState(null)
+  const [expanded, setExpanded] = useState(null)
+
+  const handleSearch = async () => {
+    if (!query.trim()) return
+    setLoading(true); setError(null); setResults([]); setApiError(null)
+    try {
+      const res  = await fetch('/api/stock/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query.trim(), perPage: 8, sources: [source] }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Search failed')
+      if (data.errors?.[source]) setApiError(data.errors[source])
+      setResults(data.results || [])
+    } catch (err) { setError(err.message) }
+    finally { setLoading(false) }
+  }
+
+  const accent = source === 'pixabay' ? '#22c55e' : '#06b6d4'
+  const accentFg = source === 'pixabay' ? 'rgba(74,222,128,0.85)' : 'rgba(103,232,249,0.85)'
+  const accentBg = source === 'pixabay' ? 'rgba(34,197,94,0.12)' : 'rgba(6,182,212,0.12)'
+  const accentBorder = source === 'pixabay' ? 'rgba(34,197,94,0.28)' : 'rgba(6,182,212,0.28)'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <div style={{ margin: '12px 20px 0', padding: '7px 12px', background: accentBg, border: `1px solid ${accentBorder}`, borderRadius: 6, fontSize: 11, color: accentFg, lineHeight: 1.5 }}>
+        {source === 'pixabay' ? 'Pixabay License — free for commercial use, no attribution required.' : 'Pexels License — free for commercial use, no attribution required.'}
+      </div>
+
+      {/* Search bar */}
+      <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0, display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, padding: '6px 10px' }}>
+          <Search size={12} style={{ color: 'rgba(255,255,255,0.45)', flexShrink: 0 }} />
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            placeholder={`Search ${label} for royalty-free footage…`}
+            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 12, color: 'rgba(255,255,255,0.88)' }}
+          />
+        </div>
+        <button
+          onClick={handleSearch}
+          disabled={loading || !query.trim()}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: loading ? accentBg : accentBg, border: `1px solid ${accentBorder}`, borderRadius: 6, color: accentFg, fontSize: 12, cursor: loading ? 'not-allowed' : 'pointer' }}
+        >
+          {loading ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} Search
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px' }}>
+        {apiError && (
+          <div style={{ fontSize: 11, color: 'rgba(251,191,36,0.75)', marginBottom: 10, padding: '7px 10px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.18)', borderRadius: 6 }}>
+            ⚠ {apiError}
+          </div>
+        )}
+        {error && (
+          <div style={{ fontSize: 12, color: 'rgba(239,68,68,0.75)', marginBottom: 12, padding: '8px 12px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 6 }}>{error}</div>
+        )}
+        {!loading && results.length === 0 && !error && (
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', padding: '24px 0', textAlign: 'center' }}>
+            {query ? 'No results found.' : `Search ${label} for royalty-free clips.`}
+          </p>
+        )}
+        {results.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {results.map((r, i) => (
+              <StockResult
+                key={r.id || i}
+                result={r}
+                source={source}
+                projectId={projectId}
+                accent={accent}
+                accentFg={accentFg}
+                accentBg={accentBg}
+                accentBorder={accentBorder}
+                isExpanded={expanded === (r.id || i)}
+                onToggle={() => setExpanded(expanded === (r.id || i) ? null : (r.id || i))}
+                onDownloaded={() => { setExpanded(null); onDownloaded() }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── StockResult ──────────────────────────────────────────────────────────────
+
+function StockResult({ result, source, projectId, accent, accentFg, accentBg, accentBorder, isExpanded, onToggle, onDownloaded }) {
+  const [tagsRaw,     setTagsRaw]     = useState(() => (result.title || '').split(',').slice(0, 5).map(t => t.trim()).join(', '))
+  const [mood,        setMood]        = useState('neutral')
+  const [category,    setCategory]    = useState('')
+  const [segment,     setSegment]     = useState(null)
+  const [downloading, setDownloading] = useState(false)
+  const [dlStatus,    setDlStatus]    = useState('')
+  const [dlError,     setDlError]     = useState(null)
+  const [done,        setDone]        = useState(false)
+
+  const MAX_CLIP_SEC = 8
+  const durationLabel = result.duration > 0
+    ? `${Math.floor(result.duration / 60)}:${String(result.duration % 60).padStart(2, '0')}`
+    : ''
+
+  const handleDownload = async () => {
+    setDlError(null); setDownloading(true); setDlStatus('Starting…')
+    try {
+      const tags    = tagsRaw.split(',').map(t => t.trim()).filter(Boolean)
+      const startSec = segment ? Math.round(segment.startTime) : 0
+      const endSec   = segment ? Math.min(Math.round(segment.endTime), startSec + MAX_CLIP_SEC) : MAX_CLIP_SEC
+      const body = {
+        url:      result.url,
+        source,
+        tags,
+        mood,
+        category: category || 'general',
+        projectId,
+        title:    result.title,
+        startSec,
+        endSec,
+      }
+      const res = await fetch('/api/stock/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Download failed' }))
+        throw new Error(err.error || 'Download failed')
+      }
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer    = ''
+      while (true) {
+        const { done: streamDone, value } = await reader.read()
+        if (streamDone) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop()
+        for (const part of parts) {
+          const line = part.replace(/^data:\s*/, '').trim()
+          if (!line) continue
+          let ev
+          try { ev = JSON.parse(line) } catch { continue }
+          if (ev.type === 'start')   setDlStatus('Downloading…')
+          else if (ev.type === 'saving') setDlStatus('Saving to library…')
+          else if (ev.type === 'done')  { setDone(true); setTimeout(onDownloaded, 1000); return }
+          else if (ev.type === 'error') throw new Error(ev.message)
+        }
+      }
+    } catch (err) {
+      setDlError(err.message)
+    } finally {
+      setDownloading(false)
+      setDlStatus('')
+    }
+  }
+
+  const inp = { width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 5, color: 'rgba(255,255,255,0.88)', fontSize: 11, padding: '5px 8px', outline: 'none', boxSizing: 'border-box' }
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 12px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 10 }} onClick={onToggle}>
+        {result.thumbnail && (
+          <img src={result.thumbnail} alt="" style={{ width: 72, height: 44, objectFit: 'cover', borderRadius: 4, background: 'rgba(255,255,255,0.04)', display: 'block', flexShrink: 0 }} />
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.70)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{result.title || result.id}</p>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, fontSize: 10, color: 'rgba(255,255,255,0.30)' }}>
+            {durationLabel && <span>{durationLabel}</span>}
+            {result.width > 0 && <span>{result.width}×{result.height}</span>}
+            <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: accentBg, color: accentFg, border: `1px solid ${accentBorder}` }}>
+              {source === 'pixabay' ? 'Pixabay' : 'Pexels'} · RF
+            </span>
+            <span style={{ color: 'rgba(255,255,255,0.15)' }}>max 8s</span>
+          </div>
+        </div>
+        {done
+          ? <CheckCircle size={14} style={{ color: '#4ade80', flexShrink: 0 }} />
+          : <Download size={13} style={{ color: isExpanded ? accentFg : 'rgba(255,255,255,0.20)', flexShrink: 0 }} />
+        }
+      </div>
+
+      {isExpanded && !done && (
+        <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.01)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {result.url && (
+              <ClipScrubber
+                videoUrl={result.url}
+                maxDuration={MAX_CLIP_SEC}
+                onSegmentSelected={s => setSegment(s)}
+              />
+            )}
+            {segment && (
+              <div style={{ fontSize: 10, color: 'rgba(74,222,128,0.60)' }}>
+                Selected: {segment.startTime.toFixed(1)}s → {segment.endTime.toFixed(1)}s ({segment.duration?.toFixed(1)}s)
+              </div>
+            )}
+            {!segment && (
+              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', margin: 0 }}>
+                Scrub the video to pick a segment, or download the first {MAX_CLIP_SEC}s.
+              </p>
+            )}
+            <div>
+              <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.30)', display: 'block', marginBottom: 3 }}>Tags (comma separated)</label>
+              <input type="text" value={tagsRaw} onChange={e => setTagsRaw(e.target.value)} placeholder="business, city, people" style={inp} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.30)', display: 'block', marginBottom: 3 }}>Mood</label>
+                <select value={mood} onChange={e => setMood(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+                  {MOOD_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.30)', display: 'block', marginBottom: 3 }}>Category</label>
+                <input type="text" value={category} onChange={e => setCategory(e.target.value)} placeholder="general" style={inp} />
+              </div>
+            </div>
+            {downloading && dlStatus && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: accentFg }}>
+                <Loader2 size={11} className="animate-spin" /> {dlStatus}
+              </div>
+            )}
+            {dlError && <p style={{ fontSize: 11, color: 'rgba(239,68,68,0.75)' }}>{dlError}</p>}
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px 12px', background: accentBg, border: `1px solid ${accentBorder}`, borderRadius: 6, color: accentFg, fontSize: 12, cursor: downloading ? 'not-allowed' : 'pointer' }}
+            >
+              {downloading
+                ? <><Loader2 size={11} className="animate-spin" /> {dlStatus || 'Downloading…'}</>
+                : <><Download size={11} /> Download {MAX_CLIP_SEC}s clip</>
+              }
+            </button>
+          </div>
+        </div>
+      )}
+
+      {done && (
+        <div style={{ padding: '8px 12px', borderTop: `1px solid ${accentBorder}`, background: accentBg, fontSize: 12, color: accentFg, display: 'flex', alignItems: 'center', gap: 6 }}>
           <CheckCircle size={12} /> Added to library
         </div>
       )}
