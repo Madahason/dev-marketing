@@ -31,6 +31,7 @@ function prepareForEval(code) {
 // Dynamically evaluates scene.motion_component code (React.createElement, no JSX).
 // Falls back to template dispatch when no motion_component is present.
 export function MotionGraphicScene({ scene }) {
+  const { durationInFrames, fps } = useVideoConfig()
   const componentCode = scene.motion_component
 
   if (componentCode) {
@@ -38,13 +39,14 @@ export function MotionGraphicScene({ scene }) {
       const evalCode = prepareForEval(componentCode)
 
       // Inject all Remotion / React primitives the generated code may use.
-      // The factory returns the component function via `return SceneComponent;`
+      // durationInFrames and fps are injected so generated code never hardcodes frame counts.
       const factory = new Function(
         'React',
         'useState', 'useEffect', 'useRef', 'useMemo',
         'useCurrentFrame', 'useVideoConfig',
         'interpolate', 'spring',
         'AbsoluteFill',
+        'durationInFrames', 'fps',
         evalCode
       )
 
@@ -53,7 +55,8 @@ export function MotionGraphicScene({ scene }) {
         useState, useEffect, useRef, useMemo,
         useCurrentFrame, useVideoConfig,
         interpolate, spring,
-        AbsoluteFill
+        AbsoluteFill,
+        durationInFrames, fps
       )
 
       if (typeof Component !== 'function') {

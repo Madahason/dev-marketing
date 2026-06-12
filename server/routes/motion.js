@@ -16,15 +16,20 @@ CRITICAL FORMAT RULES — READ CAREFULLY:
 3. Available variables (already in scope — do NOT import them):
    - React, useState, useEffect, useRef, useMemo
    - useCurrentFrame, useVideoConfig, interpolate, spring, AbsoluteFill
+   - durationInFrames  ← the REAL scene length in frames — USE THIS, never hardcode
+   - fps               ← frames per second (always 30)
 4. Define your component as: const SceneComponent = () => { ... }
 5. The LAST line of your code MUST be: return SceneComponent;
    Do NOT use: export default SceneComponent
 
 COMPONENT REQUIREMENTS:
 - Use useCurrentFrame() and interpolate() for animation
+- CRITICAL: Use durationInFrames in ALL interpolate() frame ranges, e.g.:
+    interpolate(frame, [0, durationInFrames], [startValue, endValue], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  Never write hardcoded numbers like [0, 150] or [0, 300] — the actual scene
+  duration varies and hardcoded values cause animation freeze or snap at cuts.
 - Use the dark cinematic palette: background #0a0a0a, text #f0f0f0, accent #3b82f6
 - Match the mood and content of the script excerpt
-- Animate smoothly over 150–300 frames at 30fps
 - Create visually compelling motion graphics (counters, quotes, timelines, charts, etc.)
 
 Return ONLY the JavaScript code. No markdown fences, no explanation.`;

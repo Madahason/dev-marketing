@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Video, staticFile, AbsoluteFill } from 'remotion'
+import { Video, staticFile, AbsoluteFill, useVideoConfig } from 'remotion'
 import FilmLook from './overlays/FilmLook'
 import PlaceholderScene from './PlaceholderScene'
 
@@ -18,6 +18,7 @@ function resolveClipSrc(clip) {
 
 export default function FootageScene({ clip, scene }) {
   const [error, setError] = useState(false)
+  const { durationInFrames } = useVideoConfig()
 
   const videoSrc = resolveClipSrc(clip)
 
@@ -35,6 +36,7 @@ export default function FootageScene({ clip, scene }) {
     <AbsoluteFill style={{ background: '#000' }}>
       <Video
         src={videoSrc}
+        endAt={durationInFrames}
         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         onError={() => {
           console.error('[FootageScene] failed to load:', videoSrc)

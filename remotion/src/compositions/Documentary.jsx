@@ -90,6 +90,16 @@ export function Documentary({
     )
   }
 
+  useMemo(() => {
+    let offset = 0
+    uniqueScenes.forEach((scene, i) => {
+      const dur = Math.max(Math.round((scene.duration_seconds || 5) * fps), 30)
+      console.log(`[composition] scene ${i} | id: ${scene.scene_id} | from: ${offset} | dur: ${dur}f | type: ${scene.shot_type} | duration_seconds: ${scene.duration_seconds}`)
+      offset += dur
+      if (i < uniqueScenes.length - 1) offset -= TRANSITION_FRAMES
+    })
+  }, [uniqueScenes, fps])
+
   const seriesChildren = uniqueScenes.flatMap((scene, index) => {
     const durationFrames = Math.max(Math.round((scene.duration_seconds || 5) * fps), 30)
     const spec           = audioSpecMap[scene.scene_id]
