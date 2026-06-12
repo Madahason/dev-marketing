@@ -1,32 +1,13 @@
 import { useMemo } from 'react'
-import { AbsoluteFill, Audio, interpolate, useVideoConfig } from 'remotion'
-import { TransitionSeries, springTiming } from '@remotion/transitions'
-import { fade } from '@remotion/transitions/fade'
+import { AbsoluteFill, Audio, interpolate, Sequence, useVideoConfig } from 'remotion'
 import ImageScene from '../components/ImageScene'
 import FootageScene from '../components/FootageScene'
 import PlaceholderScene from '../components/PlaceholderScene'
 import { MotionGraphicScene } from '../components/MotionGraphicScene'
 import { ErrorBoundaryScene } from '../components/ErrorBoundaryScene'
 
-const TRANSITION_FRAMES = 12
-
-export function calculateDocumentaryDuration(scenes, fps = 30) {
-  if (!scenes?.length) return 30
-  const base = scenes.reduce((sum, s) => sum + Math.max(Math.round((s.duration_seconds || 5) * fps), 30), 0)
-  const overlap = Math.max(0, scenes.length - 1) * TRANSITION_FRAMES
-  return Math.max(base - overlap, 30)
-}
-
-// Kept for backward compat — Remotion Studio still imports it
-export function computeLayout(scenes) {
-  const startFrames = []
-  let cursor = 0
-  scenes.forEach(scene => {
-    startFrames.push(cursor)
-    cursor += Math.round((scene.duration_seconds || 5) * 30)
-  })
-  return { startFrames, totalFrames: cursor }
-}
+// Frames for the audio fade-out at the end of each scene (no visual transition).
+const AUDIO_FADE_FRAMES = 12
 
 const BACKEND_URL = 'http://localhost:3001'
 
@@ -39,6 +20,27 @@ function toAbsoluteUrl(src) {
 
 const isValidUrl = (src) =>
   !!src && (src.startsWith('http') || src.match(/^[A-Z]:\\/))
+
+// Total composition length = sum of all scene durations (integers, no overlap).
+// frameOffset must always equal sum of all previous Math.max(1, Math.round(...)) values.
+export function calculateDocumentaryDuration(scenes, fps = 30) {
+  if (!scenes?.length) return 30
+  return Math.max(
+    scenes.reduce((sum, s) => sum + Math.max(1, Math.round((s.duration_seconds ?? 5) * fps)), 0),
+    30
+  )
+}
+
+// Kept for backward compat — Remotion Studio still imports it.
+export function computeLayout(scenes, fps = 30) {
+  const startFrames = []
+  let cursor = 0
+  scenes.forEach(scene => {
+    startFrames.push(cursor)
+    cursor += Math.max(1, Math.round((scene.duration_seconds ?? 5) * fps))
+  })
+  return { startFrames, totalFrames: cursor }
+}
 
 // Dispatches each scene to the correct visual component.
 // imagePath: from imagePaths[scene.scene_id] (browser player) OR scene.image_path (render)
@@ -64,10 +66,10 @@ function SceneRenderer({ scene, imagePath, selectedClips }) {
 }
 
 export function Documentary({
-  scenes       = [],
-  imagePaths   = {},
+  scenes        = [],
+  imagePaths    = {},
   selectedClips = {},
-  audioSpecs   = [],
+  audioSpecs    = [],
 }) {
   const { fps } = useVideoConfig()
 
@@ -99,24 +101,23 @@ export function Documentary({
     )
   }
 
-  useMemo(() => {
-    let offset = 0
-    uniqueScenes.forEach((scene, i) => {
-      const dur = Math.max(Math.round((scene.duration_seconds || 5) * fps), 30)
-      console.log(`[composition] scene ${i} | id: ${scene.scene_id} | from: ${offset} | dur: ${dur}f | type: ${scene.shot_type} | duration_seconds: ${scene.duration_seconds}`)
-      offset += dur
-      if (i < uniqueScenes.length - 1) offset -= TRANSITION_FRAMES
-    })
-  }, [uniqueScenes, fps])
+  // Build sequences with a running integer frameOffset.
+  // Rule: frameOffset must equal the exact sum of all previous durationFrames values.
+  // Never use float arithmetic here — Math.round() once, accumulate integers only.
+  let frameOffset = 0
 
-  const seriesChildren = uniqueScenes.flatMap((scene, index) => {
-    const durationFrames = Math.max(Math.round((scene.duration_seconds || 5) * fps), 30)
+  const sequences = uniqueScenes.map((scene) => {
+    const durationFrames = Math.max(1, Math.round((scene.duration_seconds ?? 5) * fps))
     const spec           = audioSpecMap[scene.scene_id]
     const narrationUrl   = toAbsoluteUrl(spec?.narration?.url || scene.audio_path || null)
 
-    const sequence = (
-      <TransitionSeries.Sequence
+    const from = frameOffset
+    frameOffset += durationFrames  // integer accumulation — no float drift
+
+    return (
+      <Sequence
         key={`seq_${String(scene.scene_id)}`}
+        from={from}
         durationInFrames={durationFrames}
       >
         <AbsoluteFill>
@@ -135,7 +136,7 @@ export function Documentary({
               endAt={durationFrames}
               pauseWhenBuffering
               volume={(frame) => {
-                const fadeStart = Math.max(0, durationFrames - TRANSITION_FRAMES)
+                const fadeStart = Math.max(0, durationFrames - AUDIO_FADE_FRAMES)
                 return frame >= fadeStart
                   ? interpolate(frame, [fadeStart, durationFrames], [1.0, 0], {
                       extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
@@ -145,27 +146,13 @@ export function Documentary({
             />
           )}
         </AbsoluteFill>
-      </TransitionSeries.Sequence>
+      </Sequence>
     )
-
-    if (index < uniqueScenes.length - 1) {
-      return [
-        sequence,
-        <TransitionSeries.Transition
-          key={`trans_${String(scene.scene_id)}`}
-          timing={springTiming({ durationInFrames: TRANSITION_FRAMES, config: { damping: 200 } })}
-          presentation={fade()}
-        />,
-      ]
-    }
-    return [sequence]
   })
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#0a0a0a' }}>
-      <TransitionSeries>
-        {seriesChildren}
-      </TransitionSeries>
+      {sequences}
     </AbsoluteFill>
   )
 }

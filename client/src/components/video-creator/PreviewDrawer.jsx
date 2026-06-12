@@ -2,17 +2,16 @@ import { useRef, useMemo } from 'react'
 import { X } from 'lucide-react'
 import { VideoPlayer } from './VideoPlayer'
 
-const FPS               = 30
-const TRANSITION_FRAMES = 12
+const FPS = 30
 
+// Mirrors Documentary.jsx's integer-accumulation rule exactly:
+// frameOffset = sum of Math.max(1, Math.round(duration * fps)) for all previous scenes.
 function getSceneStartFrames(scenes) {
   const frames = []
   let cursor   = 0
-  scenes.forEach((scene, i) => {
+  scenes.forEach((scene) => {
     frames.push(cursor)
-    const dur = Math.max(Math.round((scene.duration_seconds || 5) * FPS), 30)
-    cursor += dur
-    if (i < scenes.length - 1) cursor -= TRANSITION_FRAMES
+    cursor += Math.max(1, Math.round((scene.duration_seconds ?? 5) * FPS))
   })
   return frames
 }
