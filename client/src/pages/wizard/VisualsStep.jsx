@@ -1,5 +1,8 @@
+import { useState, useEffect } from 'react'
 import { Loader2, Zap } from 'lucide-react'
 import SceneGrid from '../../components/video-creator/SceneGrid'
+
+const SERVER_URL = 'http://localhost:3001'
 
 export function VisualsStep({
   scenes, sceneStatuses, isGenerating, generateDone, generateProgress, generateError,
@@ -14,6 +17,28 @@ export function VisualsStep({
   const footageCount = scenes.filter(s => s.shot_type === 'real_footage').length
   const doneCount    = Object.values(sceneStatuses).filter(s => s.status === 'done').length
   const allDone      = imageCount > 0 && doneCount >= imageCount
+
+  // Auto-select stock footage on mount for any unmatched real_footage scenes
+  const [autoSelectStatus, setAutoSelectStatus] = useState(null) // null | 'loading' | 'done'
+
+  useEffect(() => {
+    const unmatched = scenes.filter(s => s.shot_type === 'real_footage' && !selectedClips[s.scene_id])
+    if (!unmatched.length) return
+
+    setAutoSelectStatus('loading')
+    fetch(`${SERVER_URL}/api/stock/auto-select`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ scenes: unmatched }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        const sel = data.selections || {}
+        Object.entries(sel).forEach(([scene_id, clip]) => onSelectClip(scene_id, clip))
+        setAutoSelectStatus(Object.keys(sel).length > 0 ? 'done' : null)
+      })
+      .catch(() => setAutoSelectStatus(null))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ padding: '24px' }}>
@@ -37,7 +62,7 @@ export function VisualsStep({
 
       {/* Generate button + progress */}
       <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <button
             onClick={onGenerateAll}
             disabled={isGenerating || scenes.length === 0}
@@ -59,6 +84,15 @@ export function VisualsStep({
             <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13 }}>
               {doneCount} / {imageCount} images generated
             </span>
+          )}
+          {autoSelectStatus === 'loading' && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(251,191,36,0.60)' }}>
+              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+              Finding stock footage…
+            </span>
+          )}
+          {autoSelectStatus === 'done' && (
+            <span style={{ fontSize: 12, color: 'rgba(251,191,36,0.55)' }}>✓ Stock footage auto-matched</span>
           )}
         </div>
 

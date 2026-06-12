@@ -132,8 +132,6 @@ function SceneCard({
     : isFailed ? 'border-red-500/30'
     : 'border-white/[0.06] hover:border-white/[0.1]'
 
-  const stockQuery = (scene.clip_search_tags || []).join(' ') || scene.script_excerpt?.slice(0, 60) || ''
-
   return (
     <div className={`rounded-xl border bg-white/[0.02] transition-colors ${borderClass}`}>
       <div className="p-4">
@@ -292,14 +290,13 @@ function SceneCard({
               <ClipMatchSection
                 scene={scene}
                 selectedClip={selectedClip}
-                onSelectClip={onSelectClip}
                 onConvertToImage={onConvertToImage}
                 onFindStockFootage={() => setStockPanelOpen(true)}
               />
               {stockPanelOpen && (
                 <StockFootagePanel
-                  sceneId={scene.scene_id}
-                  query={stockQuery}
+                  scene={scene}
+                  selectedClip={selectedClip}
                   onSelect={(result) => { onSelectClip(result); setStockPanelOpen(false) }}
                   onClose={() => setStockPanelOpen(false)}
                 />
@@ -375,7 +372,11 @@ function SceneCard({
 
 // ─── ClipMatchSection ─────────────────────────────────────────────────────────
 
-function ClipMatchSection({ scene, selectedClip, onSelectClip, onConvertToImage, onFindStockFootage }) {
+function ClipMatchSection({ scene, selectedClip, onConvertToImage, onFindStockFootage }) {
+  const sourceBg = selectedClip?.source === 'pixabay'
+    ? 'rgba(34,197,94,0.80)'
+    : 'rgba(6,182,212,0.80)'
+
   return (
     <div className="space-y-2">
 
@@ -390,32 +391,53 @@ function ClipMatchSection({ scene, selectedClip, onSelectClip, onConvertToImage,
         </div>
       )}
 
-      {/* Selected clip */}
+      {/* Selected clip — show thumbnail + source badge + change button */}
       {selectedClip && (
-        <div className="flex items-center justify-between rounded-lg bg-amber-500/[0.06] border border-amber-500/[0.15] px-3 py-2">
-          <div className="flex items-center gap-2">
-            <Film size={11} className="text-amber-400/60" />
-            <span className="text-[11px] text-amber-300/70 font-mono">
-              {selectedClip.clip_id || selectedClip.id}
+        <div className="rounded-lg overflow-hidden border border-amber-500/[0.18]">
+          {selectedClip.thumbnail && (
+            <div className="relative" style={{ aspectRatio: '16/9' }}>
+              <img
+                src={selectedClip.thumbnail}
+                alt=""
+                className="w-full h-full object-cover block"
+              />
+              <span style={{
+                position: 'absolute', top: 4, left: 5,
+                fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                background: sourceBg, color: 'white',
+              }}>
+                {selectedClip.source === 'pixabay' ? 'Pixabay' : 'Pexels'}
+              </span>
+              {selectedClip.duration > 0 && (
+                <span className="absolute bottom-1 right-1.5 text-[9px] font-mono bg-black/70 text-white/80 px-1 py-0.5 rounded">
+                  {selectedClip.duration}s
+                </span>
+              )}
+            </div>
+          )}
+          <div className="flex items-center justify-between px-3 py-2 bg-amber-500/[0.06]">
+            <span className="text-[11px] text-amber-300/70 truncate flex-1 mr-2">
+              {selectedClip.title || selectedClip.clip_id || selectedClip.id}
             </span>
-            <span className="text-[11px] text-white/30">
-              {selectedClip.title || selectedClip.description || ''}
-            </span>
+            <button
+              onClick={onFindStockFootage}
+              className="text-[10px] text-amber-400/60 hover:text-amber-300 shrink-0 transition-colors"
+            >
+              Change footage
+            </button>
           </div>
-          <button onClick={() => onSelectClip(null)} className="text-[10px] text-white/20 hover:text-white/45 transition-colors">
-            Change
-          </button>
         </div>
       )}
 
-      {/* No clip selected — action buttons */}
+      {/* No clip selected — amber warning + action buttons */}
       {!selectedClip && (
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={onFindStockFootage}
-            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg text-amber-300 transition-colors"
+            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg text-amber-300 transition-colors"
           >
             <Search size={11} />
+            <span className="text-amber-500/70 text-[9px] mr-0.5">●</span>
             Find Stock Footage
           </button>
           <button

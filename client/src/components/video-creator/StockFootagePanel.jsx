@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Search, Loader2, X, Film } from 'lucide-react'
 
-export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onClose }) {
-  const [query,   setQuery]   = useState(initialQuery || '')
+export function StockFootagePanel({ scene, selectedClip, onSelect, onClose }) {
+  const initialQuery = (scene.clip_search_tags || []).join(' ') || scene.script_excerpt?.slice(0, 60) || ''
+  const [query,   setQuery]   = useState(initialQuery)
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
@@ -26,11 +27,7 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
 
       const errs = Object.values(data.errors || {})
       if (errs.length > 0 && (data.results || []).length === 0) {
-        if (errs.some(e => e.includes('not set'))) {
-          setError('api_keys_missing')
-        } else {
-          setError(errs[0])
-        }
+        setError(errs.some(e => e.includes('not set')) ? 'api_keys_missing' : errs[0])
         return
       }
 
@@ -54,15 +51,18 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`
   }
 
+  const sourceBadgeStyle = (source) => ({
+    background: source === 'pixabay' ? 'rgba(34,197,94,0.80)' : 'rgba(6,182,212,0.80)',
+    color: 'white',
+    fontSize: 9, padding: '1px 5px', borderRadius: 3,
+  })
+
   return (
     <>
       {/* Backdrop */}
       <div
         onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0, zIndex: 70,
-          background: 'rgba(0,0,0,0.65)',
-        }}
+        style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.65)' }}
       />
 
       {/* Panel */}
@@ -96,6 +96,29 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
           </button>
         </div>
 
+        {/* Currently selected clip */}
+        {selectedClip && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)',
+            background: 'rgba(251,191,36,0.04)', flexShrink: 0,
+          }}>
+            {selectedClip.thumbnail && (
+              <img src={selectedClip.thumbnail} alt="" style={{ width: 60, height: 34, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10, color: 'rgba(251,191,36,0.50)', marginBottom: 2 }}>Current clip</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedClip.title || selectedClip.id}
+              </div>
+            </div>
+            <span style={sourceBadgeStyle(selectedClip.source)}>
+              {selectedClip.source === 'pixabay' ? 'Pixabay' : 'Pexels'}
+            </span>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.30)' }}>Change →</span>
+          </div>
+        )}
+
         {/* Search bar */}
         <form onSubmit={handleSubmit} style={{
           display: 'flex', gap: 8, padding: '12px 20px',
@@ -112,10 +135,7 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search royalty-free footage…"
-              style={{
-                flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                fontSize: 13, color: 'rgba(255,255,255,0.85)',
-              }}
+              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'rgba(255,255,255,0.85)' }}
               autoFocus
             />
           </div>
@@ -173,8 +193,7 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
               {[1, 2, 3, 4, 5, 6].map(i => (
                 <div key={i} style={{
                   background: 'rgba(255,255,255,0.04)', borderRadius: 7,
-                  aspectRatio: '16/9',
-                  animation: 'pulse 1.5s ease-in-out infinite',
+                  aspectRatio: '16/9', animation: 'pulse 1.5s ease-in-out infinite',
                 }} />
               ))}
             </div>
@@ -200,7 +219,6 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
                     display: 'flex', flexDirection: 'column',
                   }}
                 >
-                  {/* Thumbnail */}
                   <div style={{ position: 'relative', aspectRatio: '16/9', background: '#0a0a0a', flexShrink: 0 }}>
                     {result.thumbnail
                       ? <img src={result.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -218,17 +236,10 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
                         {durationLabel(result.duration)}
                       </span>
                     )}
-                    <span style={{
-                      position: 'absolute', top: 4, left: 5,
-                      fontSize: 9, padding: '1px 5px', borderRadius: 3,
-                      background: result.source === 'pixabay' ? 'rgba(34,197,94,0.80)' : 'rgba(6,182,212,0.80)',
-                      color: 'white',
-                    }}>
+                    <span style={{ position: 'absolute', top: 4, left: 5, ...sourceBadgeStyle(result.source) }}>
                       {result.source === 'pixabay' ? 'Pixabay' : 'Pexels'}
                     </span>
                   </div>
-
-                  {/* Info + button */}
                   <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
                     <p style={{
                       fontSize: 11, color: 'rgba(255,255,255,0.50)', lineHeight: 1.3,
@@ -239,15 +250,14 @@ export function StockFootagePanel({ sceneId, query: initialQuery, onSelect, onCl
                     <button
                       onClick={() => onSelect(result)}
                       style={{
-                        marginTop: 'auto',
-                        padding: '5px 0', fontSize: 11, fontWeight: 500,
+                        marginTop: 'auto', padding: '5px 0', fontSize: 11, fontWeight: 500,
                         background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.25)',
                         borderRadius: 5, color: 'rgba(251,191,36,0.90)', cursor: 'pointer', width: '100%',
                       }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,191,36,0.20)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'rgba(251,191,36,0.12)'}
                     >
-                      Use this clip
+                      {selectedClip?.id === result.id ? '✓ Selected' : 'Use this clip'}
                     </button>
                   </div>
                 </div>

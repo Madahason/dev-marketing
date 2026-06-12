@@ -105,6 +105,39 @@ async function searchPexels(query, perPage) {
   });
 }
 
+// POST /api/stock/auto-select
+// Picks the first search result for each unmatched real_footage scene.
+// Tries Pixabay first, falls back to Pexels. Silent per-source failures.
+router.post('/auto-select', async (req, res) => {
+  const { scenes } = req.body;
+  if (!Array.isArray(scenes)) return res.status(400).json({ error: 'scenes array required' });
+
+  const footageScenes = scenes.filter(s => s.shot_type === 'real_footage' || s.real_footage_flag);
+  const selections = {};
+
+  await Promise.allSettled(footageScenes.map(async (scene) => {
+    const query = (scene.clip_search_tags || []).join(' ') || scene.script_excerpt?.slice(0, 60) || '';
+    if (!query.trim()) return;
+
+    let result = null;
+    try {
+      const hits = await searchPixabay(query.trim(), 3);
+      if (hits.length) result = hits[0];
+    } catch {}
+
+    if (!result) {
+      try {
+        const hits = await searchPexels(query.trim(), 3);
+        if (hits.length) result = hits[0];
+      } catch {}
+    }
+
+    if (result) selections[scene.scene_id] = result;
+  }));
+
+  res.json({ selections });
+});
+
 router.post('/search', async (req, res) => {
   const { query, perPage = 6, sources = ['pixabay', 'pexels'] } = req.body;
   if (!query?.trim()) return res.status(400).json({ error: 'query is required' });
