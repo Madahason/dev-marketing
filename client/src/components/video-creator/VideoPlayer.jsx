@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { Player } from '@remotion/player'
-import { Documentary, calculateDocumentaryDuration } from '@remotion-compositions/compositions/Documentary'
+import { Documentary } from '@remotion-compositions/compositions/Documentary'
+
+const FPS = 30
 
 const BACKEND_URL = 'http://localhost:3001'
 
@@ -34,8 +36,6 @@ export function VideoPlayer({
   initialFrame,
   playerRef,
 }) {
-  const fps = 30
-
   const uniqueScenes = useMemo(() => {
     const seen = new Set()
     return [...(scenes || [])].reverse().filter(s => {
@@ -51,7 +51,11 @@ export function VideoPlayer({
   }, [uniqueScenes, audioSpecs])
 
   const totalFrames = useMemo(() =>
-    calculateDocumentaryDuration(uniqueScenes, fps),
+    Math.max(
+      uniqueScenes.reduce((sum, scene) =>
+        sum + Math.max(1, Math.round((scene.duration_seconds ?? 5) * FPS)), 0),
+      30
+    ),
   [uniqueScenes])
 
   const inputProps = useMemo(() => ({
@@ -68,8 +72,8 @@ export function VideoPlayer({
       ref={playerRef || undefined}
       component={Documentary}
       inputProps={inputProps}
-      durationInFrames={Math.max(totalFrames, 30)}
-      fps={fps}
+      durationInFrames={totalFrames}
+      fps={FPS}
       compositionWidth={1920}
       compositionHeight={1080}
       style={style || { width: '100%', aspectRatio: '16/9', borderRadius: '8px', overflow: 'hidden' }}

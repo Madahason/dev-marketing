@@ -27,7 +27,7 @@ export const RemotionRoot = () => {
       <Composition
         id="Documentary"
         component={Documentary}
-        durationInFrames={testScenes.reduce((sum, s) => sum + (s.duration_seconds || 5) * 30, 0)}
+        durationInFrames={calculateDocumentaryDuration(testScenes)}
         fps={30}
         width={1920}
         height={1080}
