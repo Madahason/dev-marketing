@@ -297,7 +297,7 @@ function SceneCard({
                 <StockFootagePanel
                   scene={scene}
                   selectedClip={selectedClip}
-                  onSelect={(result) => { onSelectClip(result); setStockPanelOpen(false) }}
+                  onSelect={(result) => onSelectClip(result)}
                   onClose={() => setStockPanelOpen(false)}
                 />
               )}
@@ -416,9 +416,12 @@ function ClipMatchSection({ scene, selectedClip, onConvertToImage, onFindStockFo
             </div>
           )}
           <div className="flex items-center justify-between px-3 py-2 bg-amber-500/[0.06]">
-            <span className="text-[11px] text-amber-300/70 truncate flex-1 mr-2">
-              {selectedClip.title || selectedClip.clip_id || selectedClip.id}
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
+              <span className="text-[9px] text-green-400/70">✓</span>
+              <span className="text-[11px] text-amber-300/70 truncate">
+                {selectedClip.title || selectedClip.clip_id || selectedClip.id}
+              </span>
+            </div>
             <button
               onClick={onFindStockFootage}
               className="text-[10px] text-amber-400/60 hover:text-amber-300 shrink-0 transition-colors"

@@ -3,20 +3,29 @@ import { Video, staticFile, AbsoluteFill } from 'remotion'
 import FilmLook from './overlays/FilmLook'
 import PlaceholderScene from './PlaceholderScene'
 
+// Resolve the video src from a clip object:
+//   - Stock clips (Pixabay/Pexels): have .url, no .file — use the CDN URL directly
+//   - Local clips (downloaded): have .file — resolve via staticFile()
+function resolveClipSrc(clip) {
+  if (!clip) return null
+  if (clip.url && !clip.file) return clip.url
+  if (clip.file) {
+    const filename = clip.file.split('/').pop().split('\\').pop()
+    return filename ? staticFile(`clips/${filename}`) : null
+  }
+  return null
+}
+
 export default function FootageScene({ clip, scene }) {
   const [error, setError] = useState(false)
 
-  // Extract just the filename so staticFile() can resolve it from remotion/public/clips/.
-  // clip.file may arrive as /library/clips/name.mp4 or http://localhost:3001/library/clips/name.mp4
-  const filename = clip?.file
-    ? clip.file.split('/').pop().split('\\').pop()
-    : null
+  const videoSrc = resolveClipSrc(clip)
 
-  if (error || !filename) {
+  if (error || !videoSrc) {
     return (
       <PlaceholderScene
-        label={filename ? 'Clip not found' : 'No clip selected'}
-        sublabel={filename}
+        label={clip ? 'Clip unavailable' : 'No clip selected'}
+        sublabel={videoSrc}
         scene={scene}
       />
     )
@@ -25,10 +34,10 @@ export default function FootageScene({ clip, scene }) {
   return (
     <AbsoluteFill style={{ background: '#000' }}>
       <Video
-        src={staticFile(`clips/${filename}`)}
+        src={videoSrc}
         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         onError={() => {
-          console.error('[FootageScene] failed to load:', filename)
+          console.error('[FootageScene] failed to load:', videoSrc)
           setError(true)
         }}
       />

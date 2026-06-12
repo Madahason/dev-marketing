@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, Loader2, X, Film } from 'lucide-react'
 
 export function StockFootagePanel({ scene, selectedClip, onSelect, onClose }) {
@@ -7,6 +7,11 @@ export function StockFootagePanel({ scene, selectedClip, onSelect, onClose }) {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
+  const [applied, setApplied] = useState(null)
+  const closeTimerRef         = useRef(null)
+
+  // Clear pending close timer on unmount
+  useEffect(() => () => clearTimeout(closeTimerRef.current), [])
 
   useEffect(() => {
     if (query.trim()) doSearch(query.trim())
@@ -42,6 +47,13 @@ export function StockFootagePanel({ scene, selectedClip, onSelect, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault()
     if (query.trim()) doSearch(query.trim())
+  }
+
+  const handleSelect = (result) => {
+    onSelect(result)                               // updates VideoCreator state immediately
+    setApplied(result.id)                          // shows green flash on the card
+    clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = setTimeout(onClose, 600) // close panel after brief feedback
   }
 
   const durationLabel = (sec) => {
@@ -209,59 +221,83 @@ export function StockFootagePanel({ scene, selectedClip, onSelect, onClose }) {
           {/* Results grid */}
           {!loading && results.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-              {results.map((result, i) => (
-                <div
-                  key={result.id || i}
-                  style={{
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                    borderRadius: 8, overflow: 'hidden',
-                    display: 'flex', flexDirection: 'column',
-                  }}
-                >
-                  <div style={{ position: 'relative', aspectRatio: '16/9', background: '#0a0a0a', flexShrink: 0 }}>
-                    {result.thumbnail
-                      ? <img src={result.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Film size={20} style={{ color: 'rgba(255,255,255,0.10)' }} />
-                        </div>
-                    }
-                    {result.duration > 0 && (
-                      <span style={{
-                        position: 'absolute', bottom: 4, right: 5,
-                        fontSize: 9, fontFamily: 'monospace',
-                        background: 'rgba(0,0,0,0.72)', color: 'rgba(255,255,255,0.80)',
-                        padding: '1px 4px', borderRadius: 3,
-                      }}>
-                        {durationLabel(result.duration)}
+              {results.map((result, i) => {
+                const isApplied  = applied === result.id
+                const isCurrent  = !applied && selectedClip?.id === result.id
+                return (
+                  <div
+                    key={result.id || i}
+                    style={{
+                      background:   'rgba(255,255,255,0.02)',
+                      border:       isApplied ? '1px solid rgba(74,222,128,0.45)'
+                                  : isCurrent ? '1px solid rgba(251,191,36,0.30)'
+                                  : '1px solid rgba(255,255,255,0.07)',
+                      borderRadius: 8, overflow: 'hidden',
+                      display:      'flex', flexDirection: 'column',
+                      transition:   'border-color 0.2s',
+                    }}
+                  >
+                    <div style={{ position: 'relative', aspectRatio: '16/9', background: '#0a0a0a', flexShrink: 0 }}>
+                      {result.thumbnail
+                        ? <img src={result.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Film size={20} style={{ color: 'rgba(255,255,255,0.10)' }} />
+                          </div>
+                      }
+                      {result.duration > 0 && (
+                        <span style={{
+                          position: 'absolute', bottom: 4, right: 5,
+                          fontSize: 9, fontFamily: 'monospace',
+                          background: 'rgba(0,0,0,0.72)', color: 'rgba(255,255,255,0.80)',
+                          padding: '1px 4px', borderRadius: 3,
+                        }}>
+                          {durationLabel(result.duration)}
+                        </span>
+                      )}
+                      <span style={{ position: 'absolute', top: 4, left: 5, ...sourceBadgeStyle(result.source) }}>
+                        {result.source === 'pixabay' ? 'Pixabay' : 'Pexels'}
                       </span>
-                    )}
-                    <span style={{ position: 'absolute', top: 4, left: 5, ...sourceBadgeStyle(result.source) }}>
-                      {result.source === 'pixabay' ? 'Pixabay' : 'Pexels'}
-                    </span>
+                      {isCurrent && (
+                        <span style={{
+                          position: 'absolute', top: 4, right: 5,
+                          fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                          background: 'rgba(251,191,36,0.75)', color: '#000',
+                        }}>
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+                      <p style={{
+                        fontSize: 11, color: 'rgba(255,255,255,0.50)', lineHeight: 1.3,
+                        overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                      }}>
+                        {result.title || result.id}
+                      </p>
+                      <button
+                        onClick={() => handleSelect(result)}
+                        disabled={!!applied}
+                        style={{
+                          marginTop: 'auto', padding: '5px 0', fontSize: 11, fontWeight: 500,
+                          background: isApplied ? 'rgba(74,222,128,0.15)'
+                                    : isCurrent ? 'rgba(251,191,36,0.08)'
+                                    : 'rgba(251,191,36,0.12)',
+                          border: isApplied ? '1px solid rgba(74,222,128,0.35)'
+                                : isCurrent ? '1px solid rgba(251,191,36,0.20)'
+                                : '1px solid rgba(251,191,36,0.25)',
+                          borderRadius: 5, cursor: applied ? 'default' : 'pointer', width: '100%',
+                          color: isApplied ? 'rgba(74,222,128,0.90)' : 'rgba(251,191,36,0.90)',
+                          transition: 'background 0.2s, border-color 0.2s, color 0.2s',
+                        }}
+                        onMouseEnter={e => { if (!applied) e.currentTarget.style.background = 'rgba(251,191,36,0.20)' }}
+                        onMouseLeave={e => { if (!applied && !isApplied) e.currentTarget.style.background = isCurrent ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.12)' }}
+                      >
+                        {isApplied ? '✓ Applied' : isCurrent ? 'Currently selected' : 'Use this clip'}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                    <p style={{
-                      fontSize: 11, color: 'rgba(255,255,255,0.50)', lineHeight: 1.3,
-                      overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                    }}>
-                      {result.title || result.id}
-                    </p>
-                    <button
-                      onClick={() => onSelect(result)}
-                      style={{
-                        marginTop: 'auto', padding: '5px 0', fontSize: 11, fontWeight: 500,
-                        background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.25)',
-                        borderRadius: 5, color: 'rgba(251,191,36,0.90)', cursor: 'pointer', width: '100%',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,191,36,0.20)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(251,191,36,0.12)'}
-                    >
-                      {selectedClip?.id === result.id ? '✓ Selected' : 'Use this clip'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
