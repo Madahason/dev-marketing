@@ -9,17 +9,18 @@ import { ErrorBoundaryScene } from '../components/ErrorBoundaryScene'
 // Frames for the audio fade-out at the end of each scene (no visual transition).
 const AUDIO_FADE_FRAMES = 12
 
-const BACKEND_URL = 'http://localhost:3001'
-
+// During CLI render, audio/image paths arrive as root-relative strings
+// (e.g. /audio/{projectId}/scene_001.mp3) that the Remotion bundle server
+// resolves from remotion/public/. During browser preview, VideoPlayer.jsx
+// already converts paths to full http://localhost:3001/... URLs before they
+// reach this component, so those pass through the startsWith('http') branch.
 function toAbsoluteUrl(src) {
   if (!src) return null
-  if (src.startsWith('http')) return src
-  if (src.startsWith('/')) return `${BACKEND_URL}${src}`
-  return src // Windows absolute paths pass through unchanged (CLI rendering)
+  return src
 }
 
 const isValidUrl = (src) =>
-  !!src && (src.startsWith('http') || src.match(/^[A-Z]:\\/))
+  !!src && (src.startsWith('http') || src.startsWith('/') || src.match(/^[A-Z]:\\/))
 
 // Total composition length = sum of all scene durations (integers, no overlap).
 // frameOffset must always equal sum of all previous Math.max(1, Math.round(...)) values.
