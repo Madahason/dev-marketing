@@ -37,9 +37,11 @@ export default function ExportPanel({ scenes, sceneStatuses, selectedClips, proj
   const [showFairUseModal, setShowFairUseModal] = useState(false)
   const [ackLoading,       setAckLoading]       = useState(false)
 
-  const startTimeRef    = useRef(null)
-  const elapsedRef      = useRef(null)
-  const sseRef          = useRef(null)
+  const startTimeRef       = useRef(null)
+  const elapsedRef         = useRef(null)
+  const sseRef             = useRef(null)
+  const gotFinalEventRef   = useRef(false)
+  const reconnectCountRef  = useRef(0)
 
   // ─── computed checklist values ──────────────────────────────────────────────
   const imageScenes    = scenes.filter(s => s.shot_type === 'image')
@@ -146,6 +148,8 @@ export default function ExportPanel({ scenes, sceneStatuses, selectedClips, proj
     setFileSize(null)
     setTotalRenderTime(null)
 
+    gotFinalEventRef.current  = false
+    reconnectCountRef.current = 0
     startTimeRef.current = Date.now()
     clearInterval(elapsedRef.current)
     elapsedRef.current = setInterval(() => {
@@ -194,6 +198,7 @@ export default function ExportPanel({ scenes, sceneStatuses, selectedClips, proj
       if (event.type === 'progress') {
         setProgress({ percent: event.percent, frame: event.frame, totalFrames: event.totalFrames })
       } else if (event.type === 'done') {
+        gotFinalEventRef.current = true
         const rt = Math.floor((Date.now() - startTimeRef.current) / 1000)
         setTotalRenderTime(rt)
         setOutputPath(event.outputPath)
@@ -202,6 +207,7 @@ export default function ExportPanel({ scenes, sceneStatuses, selectedClips, proj
         clearInterval(elapsedRef.current)
         es.close()
       } else if (event.type === 'error') {
+        gotFinalEventRef.current = true
         setErrorMessage(event.message || 'Render failed')
         setErrorLogs(event.message || '')
         setRenderState('error')
@@ -211,8 +217,15 @@ export default function ExportPanel({ scenes, sceneStatuses, selectedClips, proj
     }
 
     es.onerror = () => {
-      // Connection dropped after render completed is normal — only flag error if still rendering
       es.close()
+      // Reconnect if we haven't received a final event yet — the server stores
+      // the doneEvent so a fresh connection gets it immediately even if late.
+      if (!gotFinalEventRef.current && reconnectCountRef.current < 3) {
+        reconnectCountRef.current += 1
+        setTimeout(() => {
+          if (!gotFinalEventRef.current) subscribeToProgress(pid)
+        }, 1500)
+      }
     }
   }
 
