@@ -109,53 +109,60 @@ router.post('/', async (req, res) => {
   if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
   // ── 1. Prepare remotion/public asset directories ──────────────────────────────
+  // Files are placed in FLAT directories (no projectId subdirectory) so they are
+  // always included in the bundle regardless of caching behaviour.
+  // Filenames are prefixed with projectId to avoid collisions across projects.
   const remotionPublicDir = path.resolve(PROJECT_ROOT, 'remotion', 'public');
-  const remotionAudioDir  = path.join(remotionPublicDir, 'audio', projectId);
-  const remotionAssetsDir = path.join(remotionPublicDir, 'assets', projectId);
+  const remotionAudioDir  = path.join(remotionPublicDir, 'audio');
+  const remotionAssetsDir = path.join(remotionPublicDir, 'assets');
   const remotionClipsDir  = path.join(remotionPublicDir, 'clips');
 
   fs.mkdirSync(remotionAudioDir,  { recursive: true });
   fs.mkdirSync(remotionAssetsDir, { recursive: true });
   fs.mkdirSync(remotionClipsDir,  { recursive: true });
 
-  // ── 2. Copy all audio for this project ────────────────────────────────────────
+  // ── 2. Copy all audio for this project (flat, prefixed) ───────────────────────
   const projectAudioDir = path.resolve(PROJECT_ROOT, 'projects', projectId, 'audio');
   if (fs.existsSync(projectAudioDir)) {
     for (const file of fs.readdirSync(projectAudioDir)) {
       try {
         fs.copyFileSync(
           path.join(projectAudioDir, file),
-          path.join(remotionAudioDir, file)
+          path.join(remotionAudioDir, `${projectId}_${file}`)
         );
       } catch (err) {
         console.warn(`[render] audio copy failed: ${file}:`, err.message);
       }
     }
-    console.log('[render] audio copied:', fs.readdirSync(remotionAudioDir));
+    console.log('[render] audio copied:', fs.readdirSync(remotionAudioDir).filter(f => f.startsWith(projectId)));
   } else {
     console.log('[render] no project audio directory found');
   }
 
-  // ── 3. Build render scenes — copy images, emit bundle-server paths ─────────────
+  // ── 3. Build render scenes — copy images (flat, prefixed), emit public paths ───
   const renderScenes = scenes.map(s => {
     const absImage = toAbsPath(s.image_path);
     const absAudio = toAbsPath(s.audio_path);
 
     let renderImagePath = null;
     if (absImage && fs.existsSync(absImage)) {
-      const basename = path.basename(absImage);
+      const flatName = `${projectId}_${path.basename(absImage)}`;
       try {
-        fs.copyFileSync(absImage, path.join(remotionAssetsDir, basename));
-        renderImagePath = `/assets/${projectId}/${basename}`;
+        fs.copyFileSync(absImage, path.join(remotionAssetsDir, flatName));
+        renderImagePath = `/assets/${flatName}`;
       } catch (err) {
         console.warn(`[render] image copy failed scene ${s.scene_id}:`, err.message);
       }
     }
 
+    const renderAudioPath = absAudio
+      ? `/audio/${projectId}_${path.basename(absAudio)}`
+      : null;
+
     return {
       ...s,
       image_path: renderImagePath,
-      audio_path: absAudio ? `/audio/${projectId}/${path.basename(absAudio)}` : null,
+      audio_path: renderAudioPath,
       overlays:   [],
     };
   });
@@ -238,9 +245,9 @@ router.post('/', async (req, res) => {
   }
 
   // ── Diagnostic log ────────────────────────────────────────────────────────────
-  console.log('[render] remotion/public/audio:', fs.existsSync(remotionAudioDir)  ? fs.readdirSync(remotionAudioDir)  : 'MISSING');
-  console.log('[render] remotion/public/assets:', fs.existsSync(remotionAssetsDir) ? fs.readdirSync(remotionAssetsDir).length + ' files' : 'MISSING');
-  console.log('[render] remotion/public/clips:', fs.existsSync(remotionClipsDir)   ? fs.readdirSync(remotionClipsDir)   : 'MISSING');
+  console.log('[render] public/audio (this project):', fs.readdirSync(remotionAudioDir).filter(f => f.startsWith(projectId)));
+  console.log('[render] public/assets (this project):', fs.readdirSync(remotionAssetsDir).filter(f => f.startsWith(projectId)).length, 'files');
+  console.log('[render] public/clips:', fs.readdirSync(remotionClipsDir));
 
   // ── 6. Write scenes.json ──────────────────────────────────────────────────────
   const renderProps = {
@@ -261,8 +268,10 @@ router.post('/', async (req, res) => {
   console.log('[render] spawning Remotion CLI...');
 
   const remotionPath = path.resolve(PROJECT_ROOT, 'remotion');
-  // --concurrency=1  prevents Chrome race conditions on Windows
-  // --overwrite      avoids "output file already exists" errors on retry
+  // --concurrency=1      prevents Chrome race conditions on Windows
+  // --overwrite          avoids "output already exists" errors on retry
+  // --bundle-cache=false forces re-copy of remotion/public/ every render so
+  //                      newly copied audio/asset/clip files are included
   const args = [
     'remotion', 'render',
     'src/index.jsx',
@@ -271,6 +280,7 @@ router.post('/', async (req, res) => {
     `--props=${propsPath}`,
     '--concurrency=1',
     '--overwrite',
+    '--bundle-cache=false',
   ];
 
   const proc = spawn('npx', args, {

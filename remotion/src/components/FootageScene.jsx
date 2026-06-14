@@ -1,34 +1,34 @@
 import { useState } from 'react'
-import { Video, staticFile, AbsoluteFill, useVideoConfig } from 'remotion'
+import { Video, AbsoluteFill, useVideoConfig } from 'remotion'
 import FilmLook from './overlays/FilmLook'
 import PlaceholderScene from './PlaceholderScene'
 
 // Resolve the video src from a clip object.
 // render.js downloads all clips before spawning the CLI and sets
 // clip.url = '/clips/{filename}', so Case 1 is the normal CLI render path.
+//
+// Root-relative strings like '/clips/foo.mp4' are correct here — Remotion's
+// bundle server resolves them from remotion/public/. Do NOT use staticFile()
+// because it prepends /public/ making the URL double-prefixed and returning 404.
 function resolveClipSrc(clip) {
   if (!clip) return null
 
-  // Case 1: clip was downloaded to remotion/public/clips/ by render.js
-  // url is a root-relative string like '/clips/clip_001.mp4'
+  // Case 1: clip was downloaded/copied to remotion/public/clips/ by render.js
   if (clip.url && clip.url.startsWith('/clips/')) {
-    const filename = clip.url.split('/clips/')[1]
-    const resolved = staticFile(`clips/${filename}`)
-    console.log('[FootageScene] local clip:', clip.url, '→', resolved)
-    return resolved
+    console.log('[FootageScene] local clip (CLI render):', clip.url)
+    return clip.url
   }
 
-  // Case 2: local library clip referenced by .file path
-  // file is '/library/clips/pixabay_uuid.mp4', already synced to remotion/public/clips/
+  // Case 2: local library clip — file is '/library/clips/pixabay_uuid.mp4',
+  // synced to remotion/public/clips/ at download time
   if (clip.file) {
     const filename = clip.file.split('/').pop().split('\\').pop()
-    const resolved = filename ? staticFile(`clips/${filename}`) : null
-    console.log('[FootageScene] library clip:', clip.file, '→', resolved)
-    return resolved
+    const src = filename ? `/clips/${filename}` : null
+    console.log('[FootageScene] library clip:', clip.file, '→', src)
+    return src
   }
 
-  // Case 3: external CDN URL — only reached in browser preview, never in CLI render
-  // (render.js downloads all proxy/CDN URLs before spawning the CLI)
+  // Case 3: external CDN URL — browser preview only, never reaches CLI render
   if (clip.url && clip.url.startsWith('http')) {
     console.log('[FootageScene] CDN URL (browser preview):', clip.url)
     return clip.url
