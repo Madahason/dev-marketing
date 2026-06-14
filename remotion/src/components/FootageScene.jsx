@@ -3,16 +3,37 @@ import { Video, staticFile, AbsoluteFill, useVideoConfig } from 'remotion'
 import FilmLook from './overlays/FilmLook'
 import PlaceholderScene from './PlaceholderScene'
 
-// Resolve the video src from a clip object:
-//   - Stock clips (Pixabay/Pexels): have .url, no .file — use the CDN URL directly
-//   - Local clips (downloaded): have .file — resolve via staticFile()
+// Resolve the video src from a clip object.
+// render.js downloads all clips before spawning the CLI and sets
+// clip.url = '/clips/{filename}', so Case 1 is the normal CLI render path.
 function resolveClipSrc(clip) {
   if (!clip) return null
-  if (clip.url && !clip.file) return clip.url
+
+  // Case 1: clip was downloaded to remotion/public/clips/ by render.js
+  // url is a root-relative string like '/clips/clip_001.mp4'
+  if (clip.url && clip.url.startsWith('/clips/')) {
+    const filename = clip.url.split('/clips/')[1]
+    const resolved = staticFile(`clips/${filename}`)
+    console.log('[FootageScene] local clip:', clip.url, '→', resolved)
+    return resolved
+  }
+
+  // Case 2: local library clip referenced by .file path
+  // file is '/library/clips/pixabay_uuid.mp4', already synced to remotion/public/clips/
   if (clip.file) {
     const filename = clip.file.split('/').pop().split('\\').pop()
-    return filename ? staticFile(`clips/${filename}`) : null
+    const resolved = filename ? staticFile(`clips/${filename}`) : null
+    console.log('[FootageScene] library clip:', clip.file, '→', resolved)
+    return resolved
   }
+
+  // Case 3: external CDN URL — only reached in browser preview, never in CLI render
+  // (render.js downloads all proxy/CDN URLs before spawning the CLI)
+  if (clip.url && clip.url.startsWith('http')) {
+    console.log('[FootageScene] CDN URL (browser preview):', clip.url)
+    return clip.url
+  }
+
   return null
 }
 
